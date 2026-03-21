@@ -11,20 +11,51 @@ type PurchasePanelProps = {
   listingId: string;
   priceTon: number;
   status: string;
-  releaseCode?: string;
   escrowStatus: string;
+  releaseCode?: string;
+  buyer?: string | null;
+  cancellationReason?: string;
 };
 
-export function PurchasePanel({ listingId, priceTon, status, releaseCode, escrowStatus }: PurchasePanelProps) {
+export function PurchasePanel({
+  listingId,
+  priceTon,
+  status,
+  escrowStatus,
+  releaseCode,
+  buyer,
+  cancellationReason,
+}: PurchasePanelProps) {
   const router = useRouter();
   const walletAddress = useTonAddress();
   const [buyerHandle, setBuyerHandle] = useState("@buyer");
   const [manualCode, setManualCode] = useState("");
+  const [cancelReason, setCancelReason] = useState("Item not as described or seller did not show up.");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const [tonConnectUI] = useTonConnectUI();
 
   const canSendTon = Boolean(appConfig.demoTonAddress);
+
+  async function postAction(path: string, payload: Record<string, string | undefined>, successMessage: string) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const body = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      throw new Error(body.error || "Action failed.");
+    }
+
+    startTransition(() => {
+      setMessage(successMessage);
+      router.refresh();
+    });
+  }
 
   async function purchaseListing() {
     setMessage("");
@@ -42,55 +73,65 @@ export function PurchasePanel({ listingId, priceTon, status, releaseCode, escrow
         });
       }
 
-      const response = await fetch(`/api/listings/${listingId}/purchase`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      await postAction(
+        `/api/listings/${listingId}/purchase`,
+        {
           buyerHandle,
           walletAddress: walletAddress || undefined,
-        }),
-      });
-
-      const body = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(body.error || "Purchase failed.");
-      }
-
-      startTransition(() => {
-        setMessage(canSendTon ? "Funds locked. Waiting for seller release." : "Escrow simulated for demo flow.");
-        router.refresh();
-      });
+        },
+        canSendTon
+          ? "Funds are locked. The seller can now verify the payment and accept the meetup."
+          : "Escrow was simulated. The seller can now accept the meetup in the demo flow.",
+      );
     } catch (error) {
-      const nextMessage = error instanceof Error ? error.message : "Purchase failed.";
-      setMessage(nextMessage);
+      setMessage(error instanceof Error ? error.message : "Purchase failed.");
+    }
+  }
+
+  async function acceptMeetup() {
+    setMessage("");
+
+    try {
+      await postAction(
+        `/api/listings/${listingId}/seller-accept`,
+        {},
+        "Seller accepted the meetup. The buyer can inspect the item in person and then release or cancel.",
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Seller acceptance failed.");
     }
   }
 
   async function releaseEscrow() {
     setMessage("");
 
-    const response = await fetch(`/api/listings/${listingId}/release`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        releaseCode: manualCode || undefined,
-      }),
-    });
-
-    const body = (await response.json()) as { error?: string };
-    if (!response.ok) {
-      setMessage(body.error || "Release failed.");
-      return;
+    try {
+      await postAction(
+        `/api/listings/${listingId}/release`,
+        {
+          releaseCode: manualCode || undefined,
+        },
+        "Buyer confirmed the item after inspection. Funds were released to the seller.",
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Release failed.");
     }
+  }
 
-    startTransition(() => {
-      setMessage("Escrow released. Listing closed as sold.");
-      router.refresh();
-    });
+  async function cancelEscrow() {
+    setMessage("");
+
+    try {
+      await postAction(
+        `/api/listings/${listingId}/cancel`,
+        {
+          reason: cancelReason || undefined,
+        },
+        "The meetup was cancelled. Funds stay unreleased in the demo flow.",
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Cancellation failed.");
+    }
   }
 
   return (
@@ -105,9 +146,20 @@ export function PurchasePanel({ listingId, priceTon, status, releaseCode, escrow
 
       <p className="mutedText">
         {canSendTon
-          ? "Wallet-connected purchase sends TON to the demo escrow address, then the seller releases after meetup verification."
-          : "Set NEXT_PUBLIC_DEMO_TON_ADDRESS to enable a real TON Connect testnet transfer. Until then, the escrow flow stays fully simulated."}
+          ? "Buyer locks TON first. Seller accepts the meetup only after seeing funds are locked."
+          : "No demo TON address is configured, so the app simulates the same escrow flow without a live transfer."}
       </p>
+
+      <div className="codePanel">
+        <span>Current escrow step</span>
+        <strong>{escrowStatus}</strong>
+      </div>
+
+      {buyer ? (
+        <p className="mutedText">
+          Buyer attached to this escrow: <strong>{buyer}</strong>
+        </p>
+      ) : null}
 
       {status === "active" ? (
         <>
@@ -116,28 +168,64 @@ export function PurchasePanel({ listingId, priceTon, status, releaseCode, escrow
             <input value={buyerHandle} onChange={(event) => setBuyerHandle(event.target.value)} />
           </label>
           <button className="primaryButton" disabled={isPending} onClick={() => void purchaseListing()}>
-            {canSendTon ? "Lock funds with TON" : "Simulate escrow purchase"}
+            {canSendTon ? "Lock funds with TON" : "Simulate buyer reservation"}
           </button>
         </>
       ) : null}
 
-      {escrowStatus === "awaiting_release" ? (
+      {escrowStatus === "funds_locked" ? (
         <>
           <div className="codePanel">
-            <span>Release code</span>
+            <span>Meetup release code</span>
             <strong>{releaseCode || "Pending"}</strong>
           </div>
+          <p className="mutedText">
+            The buyer has locked funds. The seller should verify the payment and then accept the meetup.
+          </p>
+          <button className="primaryButton" disabled={isPending} onClick={() => void acceptMeetup()}>
+            Seller accepts meetup
+          </button>
+          <label>
+            Cancellation reason
+            <input value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} />
+          </label>
+          <button className="secondaryButton" disabled={isPending} onClick={() => void cancelEscrow()}>
+            Cancel if seller is unavailable
+          </button>
+        </>
+      ) : null}
+
+      {escrowStatus === "seller_accepted" ? (
+        <>
+          <div className="codePanel">
+            <span>Meetup release code</span>
+            <strong>{releaseCode || "Pending"}</strong>
+          </div>
+          <p className="mutedText">
+            The seller accepted the meetup. The buyer now inspects the item in real life and decides whether to release
+            or cancel.
+          </p>
           <label>
             Confirm release code
             <input value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder="Optional in demo mode" />
           </label>
-          <button className="secondaryButton" disabled={isPending} onClick={() => void releaseEscrow()}>
-            Release funds after meetup
+          <button className="primaryButton" disabled={isPending} onClick={() => void releaseEscrow()}>
+            Buyer confirms item and releases funds
+          </button>
+          <label>
+            Cancellation reason
+            <input value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} />
+          </label>
+          <button className="secondaryButton" disabled={isPending} onClick={() => void cancelEscrow()}>
+            Buyer rejects item or cancels meetup
           </button>
         </>
       ) : null}
 
-      {status === "sold" ? <p className="successText">This listing has been sold and the escrow was released.</p> : null}
+      {status === "sold" ? <p className="successText">The buyer accepted the item in person and the seller was paid.</p> : null}
+      {status === "cancelled" ? (
+        <p className="errorText">The meetup did not complete. Reason: {cancellationReason || "Not provided."}</p>
+      ) : null}
       {message ? <p className="mutedText">{message}</p> : null}
     </section>
   );

@@ -12,6 +12,41 @@ type ListingPageProps = {
   }>;
 };
 
+function describeEscrowStep(status: string) {
+  switch (status) {
+    case "draft":
+      return {
+        title: "Waiting for a buyer",
+        description: "The seller posted the listing and is waiting for someone to reserve it.",
+      };
+    case "funds_locked":
+      return {
+        title: "Funds locked",
+        description: "A buyer reserved the item and locked funds in TON. The seller now verifies that payment exists.",
+      };
+    case "seller_accepted":
+      return {
+        title: "Meetup accepted",
+        description: "The seller accepted the meetup. The buyer inspects the item in person before releasing funds.",
+      };
+    case "released":
+      return {
+        title: "Funds released",
+        description: "The buyer confirmed the item after inspection, so the seller received payment.",
+      };
+    case "cancelled":
+      return {
+        title: "Meetup cancelled",
+        description: "The buyer did not approve the handoff, so the escrow remained unreleased.",
+      };
+    default:
+      return {
+        title: "Escrow draft",
+        description: "The listing exists, but no buyer has locked funds yet.",
+      };
+  }
+}
+
 export default async function ListingPage({ params }: ListingPageProps) {
   const { id } = await params;
   const listing = await findListing(id);
@@ -21,6 +56,7 @@ export default async function ListingPage({ params }: ListingPageProps) {
   }
 
   const shareText = buildTelegramShareText(listing);
+  const escrowStep = describeEscrowStep(listing.escrow.status);
 
   return (
     <main className="pageShell">
@@ -63,14 +99,16 @@ export default async function ListingPage({ params }: ListingPageProps) {
           status={listing.status}
           escrowStatus={listing.escrow.status}
           releaseCode={listing.escrow.releaseCode}
+          buyer={listing.escrow.buyer}
+          cancellationReason={listing.escrow.cancellationReason}
         />
       </section>
 
       <section className="twoUp">
         <article className="glassPanel">
-          <span className="eyebrow">AI Insight</span>
-          <h2>Why this should convert</h2>
-          <p>{listing.aiInsights.pricingRationale}</p>
+          <span className="eyebrow">Escrow Flow</span>
+          <h2>{escrowStep.title}</h2>
+          <p>{escrowStep.description}</p>
           <div className="tagRow">
             {listing.aiInsights.tags.map((tag) => (
               <span key={tag} className="tag">

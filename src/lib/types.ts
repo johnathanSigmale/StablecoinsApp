@@ -1,5 +1,5 @@
-export type ListingStatus = "active" | "reserved" | "sold";
-export type EscrowStatus = "draft" | "awaiting_release" | "released" | "cancelled";
+export type ListingStatus = "active" | "reserved" | "meetup" | "sold" | "cancelled";
+export type EscrowStatus = "draft" | "funds_locked" | "seller_accepted" | "released" | "cancelled";
 
 export type ListingAiInsights = {
   suggestedTitle: string;
@@ -10,8 +10,14 @@ export type ListingAiInsights = {
 export type ListingEscrow = {
   status: EscrowStatus;
   buyer: string | null;
+  buyerWalletAddress?: string;
   releaseCode?: string;
   transactionRef?: string;
+  fundsLockedAt?: string;
+  sellerAcceptedAt?: string;
+  releasedAt?: string;
+  cancelledAt?: string;
+  cancellationReason?: string;
   lastUpdatedAt: string;
 };
 
