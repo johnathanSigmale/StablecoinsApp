@@ -33,6 +33,9 @@ type HeroImageResult = {
   statusMessage: string;
 };
 
+const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash-lite";
+const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
+
 function inlinePartFromDataUrl(dataUrl: string): GeminiPart | null {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) {
@@ -255,6 +258,32 @@ function buildDraftSchema() {
   };
 }
 
+async function fetchGeminiWithRetry(url: string, body: unknown, apiKey: string) {
+  let lastResponse: Response | null = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (response.status !== 429) {
+      return response;
+    }
+
+    lastResponse = response;
+    const retryAfter = Number(response.headers.get("retry-after") || "2");
+    const waitMs = Number.isFinite(retryAfter) ? Math.max(retryAfter, 2) * 1000 : 2000;
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+
+  return lastResponse;
+}
+
 export async function generateListingDraftResult(input: ListingDraftInput): Promise<DraftResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -291,31 +320,29 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
   }
 
   try {
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+    const response = await fetchGeminiWithRetry(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`,
       {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
+        contents: [{ parts }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: buildDraftSchema(),
         },
-        body: JSON.stringify({
-          contents: [{ parts }],
-          generationConfig: {
-            responseMimeType: "application/json",
-            responseSchema: buildDraftSchema(),
-          },
-        }),
       },
+      apiKey,
     );
 
-    if (!response.ok) {
-      const body = await response.text();
+    if (!response || !response.ok) {
+      const status = response?.status ?? 0;
+      const body = response ? await response.text() : "No response";
       console.error("Gemini text generation failed:", body);
       const fallback = fallbackDraft(input);
       return {
         ...fallback,
-        statusMessage: `Gemini text generation failed with HTTP ${response.status}, so fallback copy generation was used.`,
+        statusMessage:
+          status === 429
+            ? "Gemini text generation hit rate limits (HTTP 429), so fallback copy generation was used."
+            : `Gemini text generation failed with HTTP ${status}, so fallback copy generation was used.`,
       };
     }
 
@@ -352,8 +379,8 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
       draft: parsed,
       source: "gemini",
       statusMessage: input.imageUrl
-        ? "Gemini text generation succeeded using the seller photo and prompt."
-        : "Gemini text generation succeeded using the seller prompt.",
+        ? `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using the seller photo and prompt.`
+        : `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using the seller prompt.`,
     };
   } catch (error) {
     console.error("Gemini text generation threw an error:", error);
@@ -415,23 +442,26 @@ export async function generateListingHeroImageResult(input: ListingDraftInput, d
   }
 
   try {
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent",
+    const response = await fetchGeminiWithRetry(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent`,
       {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{ parts }],
-        }),
+        contents: [{ parts }],
       },
+      apiKey,
     );
 
-    if (!response.ok) {
-      const body = await response.text();
+    if (!response || !response.ok) {
+      const status = response?.status ?? 0;
+      const body = response ? await response.text() : "No response";
       console.error("Gemini image generation failed:", body);
+
+      if (status === 429 && input.imageUrl) {
+        return {
+          imageUrl: input.imageUrl,
+          source: "seller-photo",
+          statusMessage: "Gemini image generation hit rate limits (HTTP 429), so the seller photo is used instead.",
+        };
+      }
     } else {
       const payload = (await response.json()) as {
         candidates?: Array<{
@@ -446,7 +476,7 @@ export async function generateListingHeroImageResult(input: ListingDraftInput, d
         return {
           imageUrl: imageDataUrl,
           source: "gemini-image",
-          statusMessage: "Gemini generated a hero image successfully.",
+          statusMessage: `Gemini generated a hero image successfully with ${GEMINI_IMAGE_MODEL}.`,
         };
       }
 

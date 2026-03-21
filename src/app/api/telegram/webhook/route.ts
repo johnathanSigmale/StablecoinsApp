@@ -10,11 +10,19 @@ type TelegramPhoto = {
   height?: number;
 };
 
+type TelegramDocument = {
+  file_id: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+};
+
 type TelegramMessage = {
   message_id: number;
   caption?: string;
   text?: string;
   photo?: TelegramPhoto[];
+  document?: TelegramDocument;
   from?: {
     username?: string;
   };
@@ -81,15 +89,27 @@ function inferMimeTypeFromFilePath(filePath: string) {
   return "image/jpeg";
 }
 
-async function getTelegramPhotoDataUrl(fileId: string) {
+function isImageDocument(document?: TelegramDocument | null) {
+  if (!document) {
+    return false;
+  }
+
+  if (document.mime_type?.startsWith("image/")) {
+    return true;
+  }
+
+  return Boolean(document.file_name?.match(/\.(png|jpe?g|webp)$/i));
+}
+
+async function getTelegramFileDataUrl(fileId: string) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
-    return null;
+    return { dataUrl: null, status: "Missing TELEGRAM_BOT_TOKEN." };
   }
 
   const fileInfoResponse = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${encodeURIComponent(fileId)}`);
   if (!fileInfoResponse.ok) {
-    return null;
+    return { dataUrl: null, status: `Telegram getFile failed with HTTP ${fileInfoResponse.status}.` };
   }
 
   const fileInfo = (await fileInfoResponse.json()) as {
@@ -101,12 +121,12 @@ async function getTelegramPhotoDataUrl(fileId: string) {
 
   const filePath = fileInfo.result?.file_path;
   if (!fileInfo.ok || !filePath) {
-    return null;
+    return { dataUrl: null, status: "Telegram returned no downloadable file path." };
   }
 
   const fileResponse = await fetch(`https://api.telegram.org/file/bot${botToken}/${filePath}`);
   if (!fileResponse.ok) {
-    return null;
+    return { dataUrl: null, status: `Telegram file download failed with HTTP ${fileResponse.status}.` };
   }
 
   const headerMimeType = fileResponse.headers.get("content-type");
@@ -114,7 +134,26 @@ async function getTelegramPhotoDataUrl(fileId: string) {
     headerMimeType && headerMimeType.startsWith("image/") ? headerMimeType : inferMimeTypeFromFilePath(filePath);
 
   const bytes = Buffer.from(await fileResponse.arrayBuffer());
-  return `data:${mimeType};base64,${bytes.toString("base64")}`;
+  return {
+    dataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
+    status: "Seller photo was attached successfully.",
+  };
+}
+
+async function getTelegramImageAttachment(message?: TelegramMessage) {
+  const bestPhoto = getBestTelegramPhoto(message?.photo);
+  if (bestPhoto) {
+    return getTelegramFileDataUrl(bestPhoto.file_id);
+  }
+
+  if (isImageDocument(message?.document)) {
+    return getTelegramFileDataUrl(message!.document!.file_id);
+  }
+
+  return {
+    dataUrl: null,
+    status: "No Telegram image attachment was detected in the message.",
+  };
 }
 
 export async function POST(request: Request) {
@@ -156,14 +195,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const bestPhoto = getBestTelegramPhoto(message?.photo);
-    const photoDataUrl = bestPhoto ? await getTelegramPhotoDataUrl(bestPhoto.file_id) : undefined;
+    const attachment = await getTelegramImageAttachment(message);
 
     const listing = await createListing({
       sellerPrompt: prompt,
       sellerHandle: message?.from?.username ? `@${message.from.username}` : "@telegram_seller",
       city: message?.chat?.title || "Telegram community",
-      imageUrl: photoDataUrl || undefined,
+      imageUrl: attachment.dataUrl || undefined,
     });
 
     const listingUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/listings/${listing.id}`;
@@ -178,6 +216,7 @@ export async function POST(request: Request) {
           `Price: ${listing.priceTon} TON`,
           `Text source: ${listing.generation?.textSource || "unknown"}`,
           `Image source: ${listing.generation?.imageSource || "unknown"}`,
+          `Attachment status: ${attachment.status}`,
           listing.generation?.textStatusMessage ? `Text status: ${listing.generation.textStatusMessage}` : "",
           listing.generation?.imageStatusMessage ? `Image status: ${listing.generation.imageStatusMessage}` : "",
           "",
@@ -195,6 +234,7 @@ export async function POST(request: Request) {
       listingId: listing.id,
       nextStep: listingUrl,
       generation: listing.generation,
+      attachmentStatus: attachment.status,
     });
   } catch (error) {
     console.error("Telegram listing creation failed:", error);
