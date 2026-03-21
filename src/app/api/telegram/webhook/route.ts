@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 
 import { acquireRedisLock, hasRedisStore } from "@/lib/server/redis-store";
 import { acceptMeetup, cancelListingEscrow, createListing, findListing } from "@/lib/services/listings-service";
-import { answerTelegramCallbackQuery, buildContactUrl, buildListingUrl, sendTelegramBotMessage } from "@/lib/services/telegram-service";
+import {
+  answerTelegramCallbackQuery,
+  buildContactUrl,
+  buildListingUrl,
+  buildTelegramShareUrl,
+  sendTelegramBotMessage,
+} from "@/lib/services/telegram-service";
 
 type TelegramPhoto = {
   file_id: string;
@@ -51,8 +57,10 @@ type TelegramUpdate = {
   callback_query?: TelegramCallbackQuery;
 };
 
-async function sendTelegramMessage(chatId: number, text: string, listingUrl?: string) {
-  await sendTelegramBotMessage(chatId, text, listingUrl ? [[{ text: "Open listing", url: listingUrl }]] : undefined);
+type SendRows = Parameters<typeof sendTelegramBotMessage>[2];
+
+async function sendTelegramMessage(chatId: number, text: string, rows?: SendRows) {
+  await sendTelegramBotMessage(chatId, text, rows);
 }
 
 function buildWelcomeMessage() {
@@ -336,6 +344,7 @@ export async function POST(request: Request) {
     });
 
     const listingUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/listings/${listing.id}`;
+    const shareUrl = buildTelegramShareUrl(listing);
 
     if (chatId) {
       await sendTelegramMessage(
@@ -356,7 +365,12 @@ export async function POST(request: Request) {
         ]
           .filter(Boolean)
           .join("\n"),
-        listingUrl,
+        [
+          [
+            { text: "Open listing", url: listingUrl },
+            { text: "Share in Telegram", url: shareUrl },
+          ],
+        ],
       );
     }
 
