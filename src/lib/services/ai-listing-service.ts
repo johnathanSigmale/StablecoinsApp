@@ -102,9 +102,7 @@ function inferTitle(prompt: string, category: string) {
     return `${category} Listing`;
   }
 
-  return words
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 }
 
 function inferPrice(prompt: string, desiredPriceTon?: number) {
@@ -155,9 +153,12 @@ function extractTags(prompt: string, category: string, city: string) {
 }
 
 function rewriteFallbackSummary(prompt: string, title: string, city: string, condition: string) {
+  const normalizedPrompt = prompt.trim().replace(/\s+/g, " ");
+
   return [
-    `${title} offered in ${condition.toLowerCase()} condition.`,
-    `Local handoff available in ${city}.`,
+    `${title} offered in ${condition.toLowerCase()} condition for an in-person exchange.`,
+    `Pickup or meetup is available in ${city}.`,
+    `Seller notes: ${normalizedPrompt}.`,
     "Buyer can lock TON first, inspect the item in person, and release funds only after validation.",
   ].join(" ");
 }
@@ -184,7 +185,7 @@ function fallbackDraft(input: ListingDraftInput): DraftResult {
       aiInsights,
     },
     source: "fallback",
-    statusMessage: "Gemini text generation failed, so fallback copy generation was used.",
+    statusMessage: "Gemini generation was unavailable, so fallback copy generation was used.",
   };
 }
 
@@ -228,23 +229,52 @@ async function fetchImageAsInlinePart(imageUrl: string): Promise<GeminiPart | nu
   };
 }
 
+function buildDraftSchema() {
+  return {
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      summary: { type: "string" },
+      category: { type: "string" },
+      condition: { type: "string" },
+      priceTon: { type: "number" },
+      aiInsights: {
+        type: "object",
+        properties: {
+          suggestedTitle: { type: "string" },
+          pricingRationale: { type: "string" },
+          tags: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+        required: ["suggestedTitle", "pricingRationale", "tags"],
+      },
+    },
+    required: ["title", "summary", "category", "condition", "priceTon", "aiInsights"],
+  };
+}
+
 export async function generateListingDraftResult(input: ListingDraftInput): Promise<DraftResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return fallbackDraft(input);
+    const fallback = fallbackDraft(input);
+    return {
+      ...fallback,
+      statusMessage: "Gemini API key is missing, so fallback copy generation was used.",
+    };
   }
 
   const explicitPriceTon = input.desiredPriceTon ?? extractExplicitTonPrice(input.sellerPrompt);
-
   const parts: GeminiPart[] = [
     {
       text: [
         "You help sellers create Telegram-native second-hand electronics listings for a TON commerce assistant.",
-        "Return strict JSON only with keys: title, summary, category, condition, priceTon, aiInsights.",
-        "aiInsights must contain suggestedTitle, pricingRationale, and tags.",
+        "Return JSON only.",
         "Rewrite the description in polished marketplace language. Do not copy the seller sentence verbatim.",
-        "Use the provided image when it is present to infer the actual product and avoid generic wording.",
-        "If the seller explicitly provided a TON price, preserve that exact TON price in the output.",
+        "When a seller photo is present, identify the product from the photo and use that to improve the title and summary.",
+        "Preserve any explicit TON price written by the seller.",
+        "Keep the tone concise, credible, and marketplace-ready.",
         `Seller handle: ${input.sellerHandle}`,
         `City: ${input.city}`,
         explicitPriceTon ? `Preferred price TON: ${explicitPriceTon}` : "Preferred price TON: none",
@@ -270,11 +300,11 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
           "x-goog-api-key": apiKey,
         },
         body: JSON.stringify({
-          contents: [
-            {
-              parts,
-            },
-          ],
+          contents: [{ parts }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: buildDraftSchema(),
+          },
         }),
       },
     );
@@ -282,7 +312,11 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
     if (!response.ok) {
       const body = await response.text();
       console.error("Gemini text generation failed:", body);
-      return fallbackDraft(input);
+      const fallback = fallbackDraft(input);
+      return {
+        ...fallback,
+        statusMessage: `Gemini text generation failed with HTTP ${response.status}, so fallback copy generation was used.`,
+      };
     }
 
     const payload = (await response.json()) as {
@@ -295,12 +329,20 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
 
     const content = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("\n").trim();
     if (!content) {
-      return fallbackDraft(input);
+      const fallback = fallbackDraft(input);
+      return {
+        ...fallback,
+        statusMessage: "Gemini text generation returned no content, so fallback copy generation was used.",
+      };
     }
 
     const parsed = JSON.parse(extractJsonCandidate(content)) as ListingDraft;
     if (!parsed.title || !parsed.summary || !parsed.category || !parsed.condition || !parsed.aiInsights) {
-      return fallbackDraft(input);
+      const fallback = fallbackDraft(input);
+      return {
+        ...fallback,
+        statusMessage: "Gemini text generation returned incomplete structured data, so fallback copy generation was used.",
+      };
     }
 
     parsed.priceTon = explicitPriceTon || Number(parsed.priceTon) || inferPrice(input.sellerPrompt, explicitPriceTon);
@@ -309,11 +351,17 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
     return {
       draft: parsed,
       source: "gemini",
-      statusMessage: "Gemini text generation succeeded.",
+      statusMessage: input.imageUrl
+        ? "Gemini text generation succeeded using the seller photo and prompt."
+        : "Gemini text generation succeeded using the seller prompt.",
     };
   } catch (error) {
     console.error("Gemini text generation threw an error:", error);
-    return fallbackDraft(input);
+    const fallback = fallbackDraft(input);
+    return {
+      ...fallback,
+      statusMessage: "Gemini text generation threw an error, so fallback copy generation was used.",
+    };
   }
 }
 
@@ -344,49 +392,65 @@ export async function generateListingHeroImageResult(input: ListingDraftInput, d
     };
   }
 
-  const prompt = [
-    `Create a clean marketplace hero image for this product: ${draft.title}.`,
-    `Category: ${draft.category}.`,
-    `Condition: ${draft.condition}.`,
-    "Style: photorealistic ecommerce product shot, centered subject, neutral dark background, studio lighting, premium but realistic, no text, no watermark, no collage.",
-    input.imageUrl ? "Use the reference image to preserve the exact product identity while improving presentation." : "Generate the product image from the listing description alone.",
-    `Seller description: ${input.sellerPrompt}`,
-  ].join("\n");
+  const parts: GeminiPart[] = [
+    {
+      text: [
+        `Create a clean ecommerce hero image for this product: ${draft.title}.`,
+        `Category: ${draft.category}.`,
+        `Condition: ${draft.condition}.`,
+        "Style: photorealistic product shot, centered subject, premium studio lighting, realistic materials, no text, no watermark, no collage.",
+        input.imageUrl
+          ? "Use the reference image to preserve the exact identity, color, and shape of the seller's real product."
+          : "Generate the product image from the description only.",
+        `Seller description: ${input.sellerPrompt}`,
+      ].join("\n"),
+    },
+  ];
+
+  if (input.imageUrl) {
+    const imagePart = await fetchImageAsInlinePart(input.imageUrl);
+    if (imagePart) {
+      parts.push(imagePart);
+    }
+  }
 
   try {
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          contents: [{ parts }],
+        }),
       },
-      body: JSON.stringify({
-        model: "gemini-3-pro-image-preview",
-        input: prompt,
-        response_modalities: ["IMAGE"],
-      }),
-    });
+    );
 
-    if (response.ok) {
+    if (!response.ok) {
+      const body = await response.text();
+      console.error("Gemini image generation failed:", body);
+    } else {
       const payload = (await response.json()) as {
-        outputs?: Array<{
-          type?: string;
-          mime_type?: string;
-          data?: string;
+        candidates?: Array<{
+          content?: {
+            parts?: GeminiResponsePart[];
+          };
         }>;
       };
 
-      const imageOutput = payload.outputs?.find((output) => output.type === "image" && output.mime_type?.startsWith("image/") && output.data);
-      if (imageOutput?.mime_type && imageOutput.data) {
+      const imageDataUrl = extractInlineImagePart(payload.candidates?.[0]?.content?.parts || []);
+      if (imageDataUrl) {
         return {
-          imageUrl: `data:${imageOutput.mime_type};base64,${imageOutput.data}`,
+          imageUrl: imageDataUrl,
           source: "gemini-image",
           statusMessage: "Gemini generated a hero image successfully.",
         };
       }
-    } else {
-      const body = await response.text();
-      console.error("Gemini image generation failed:", body);
+
+      console.error("Gemini image generation returned no inline image part.");
     }
   } catch (error) {
     console.error("Gemini image generation threw an error:", error);
