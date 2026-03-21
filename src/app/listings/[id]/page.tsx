@@ -3,7 +3,11 @@ import { notFound } from "next/navigation";
 
 import { PurchasePanel } from "@/components/purchase-panel";
 import { findListing } from "@/lib/services/listings-service";
-import { buildTelegramShareText } from "@/lib/services/telegram-service";
+import {
+  buildTelegramShareText,
+  buildTelegramShareUrl,
+  buildTelegramUserUrl,
+} from "@/lib/services/telegram-service";
 import { formatTon } from "@/lib/utils";
 
 type ListingPageProps = {
@@ -21,8 +25,8 @@ function describeEscrowStep(status: string) {
       };
     case "funds_locked":
       return {
-        title: "Funds locked",
-        description: "A buyer reserved the item and locked funds in TON. The seller now verifies that payment exists.",
+        title: "Reservation received",
+        description: "A buyer reserved the item. The seller should confirm meetup details on Telegram before accepting.",
       };
     case "seller_accepted":
       return {
@@ -42,7 +46,7 @@ function describeEscrowStep(status: string) {
     default:
       return {
         title: "Escrow draft",
-        description: "The listing exists, but no buyer has locked funds yet.",
+        description: "The listing exists, but no buyer has reserved it yet.",
       };
   }
 }
@@ -56,6 +60,9 @@ export default async function ListingPage({ params }: ListingPageProps) {
   }
 
   const shareText = buildTelegramShareText(listing);
+  const telegramShareUrl = buildTelegramShareUrl(listing);
+  const sellerTelegramUrl = buildTelegramUserUrl(listing.sellerHandle);
+  const buyerTelegramUrl = buildTelegramUserUrl(listing.escrow.buyer);
   const escrowStep = describeEscrowStep(listing.escrow.status);
 
   return (
@@ -106,12 +113,9 @@ export default async function ListingPage({ params }: ListingPageProps) {
 
       <section className="twoUp">
         <article className="glassPanel">
-          <span className="eyebrow">Generation Debug</span>
-          <h2>
-            Text: {listing.generation?.textSource || "unknown"} | Image: {listing.generation?.imageSource || "unknown"}
-          </h2>
-          <p>{listing.generation?.textStatusMessage || "No text status available."}</p>
-          <p>{listing.generation?.imageStatusMessage || "No image status available."}</p>
+          <span className="eyebrow">Escrow Flow</span>
+          <h2>{escrowStep.title}</h2>
+          <p>{escrowStep.description}</p>
           <div className="tagRow">
             {listing.aiInsights.tags.map((tag) => (
               <span key={tag} className="tag">
@@ -119,12 +123,25 @@ export default async function ListingPage({ params }: ListingPageProps) {
               </span>
             ))}
           </div>
+          {sellerTelegramUrl ? (
+            <a className="secondaryButton" href={sellerTelegramUrl} target="_blank" rel="noreferrer">
+              Contact seller on Telegram
+            </a>
+          ) : null}
+          {buyerTelegramUrl ? (
+            <a className="secondaryButton" href={buyerTelegramUrl} target="_blank" rel="noreferrer">
+              Contact buyer on Telegram
+            </a>
+          ) : null}
         </article>
 
         <article className="glassPanel">
           <span className="eyebrow">Telegram Share</span>
           <h2>Distribution copy</h2>
           <pre className="shareBox">{shareText}</pre>
+          <a className="primaryButton" href={telegramShareUrl} target="_blank" rel="noreferrer">
+            Share in Telegram
+          </a>
           <Link className="secondaryButton" href="/">
             Back to marketplace
           </Link>

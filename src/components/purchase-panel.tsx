@@ -2,9 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { TonConnectButton, useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
+import { TonConnectButton, useTonAddress } from "@tonconnect/ui-react";
 
-import { appConfig } from "@/lib/config";
 import { formatTon } from "@/lib/utils";
 
 type PurchasePanelProps = {
@@ -33,9 +32,6 @@ export function PurchasePanel({
   const [cancelReason, setCancelReason] = useState("Item not as described or seller did not show up.");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
-  const [tonConnectUI] = useTonConnectUI();
-
-  const canSendTon = Boolean(appConfig.demoTonAddress);
 
   async function postAction(path: string, payload: Record<string, string | undefined>, successMessage: string) {
     const response = await fetch(path, {
@@ -61,27 +57,13 @@ export function PurchasePanel({
     setMessage("");
 
     try {
-      if (canSendTon) {
-        await tonConnectUI.sendTransaction({
-          validUntil: Math.floor(Date.now() / 1000) + 300,
-          messages: [
-            {
-              address: appConfig.demoTonAddress,
-              amount: String(Math.round(priceTon * 1_000_000_000)),
-            },
-          ],
-        });
-      }
-
       await postAction(
         `/api/listings/${listingId}/purchase`,
         {
           buyerHandle,
           walletAddress: walletAddress || undefined,
         },
-        canSendTon
-          ? "Funds are locked. The seller can now verify the payment and accept the meetup."
-          : "Escrow was simulated. The seller can now accept the meetup in the demo flow.",
+        "Reservation created. No TON was transferred. The seller is notified on Telegram when the listing was created via the bot.",
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Purchase failed.");
@@ -138,16 +120,15 @@ export function PurchasePanel({
     <section className="glassPanel purchasePanel">
       <div className="purchaseHeader">
         <div>
-          <span className="eyebrow">Secure Checkout</span>
+          <span className="eyebrow">Reservation Flow</span>
           <h2>{formatTon(priceTon)}</h2>
         </div>
         <TonConnectButton />
       </div>
 
       <p className="mutedText">
-        {canSendTon
-          ? "Buyer locks TON first. Seller accepts the meetup only after seeing funds are locked."
-          : "No demo TON address is configured, so the app simulates the same escrow flow without a live transfer."}
+        Reservation is currently a demo hold. No TON is transferred at reservation time. Wallet connection is only used
+        to attach the buyer wallet when available.
       </p>
 
       <div className="codePanel">
@@ -168,7 +149,7 @@ export function PurchasePanel({
             <input value={buyerHandle} onChange={(event) => setBuyerHandle(event.target.value)} />
           </label>
           <button className="primaryButton" disabled={isPending} onClick={() => void purchaseListing()}>
-            {canSendTon ? "Lock funds with TON" : "Simulate buyer reservation"}
+            Reserve item without TON transfer
           </button>
         </>
       ) : null}
@@ -180,7 +161,7 @@ export function PurchasePanel({
             <strong>{releaseCode || "Pending"}</strong>
           </div>
           <p className="mutedText">
-            The buyer has locked funds. The seller should verify the payment and then accept the meetup.
+            The buyer reserved the item. The seller should confirm the meetup details on Telegram and then accept the meetup.
           </p>
           <button className="primaryButton" disabled={isPending} onClick={() => void acceptMeetup()}>
             Seller accepts meetup

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { reserveListing } from "@/lib/services/listings-service";
+import { notifySellerReservation } from "@/lib/services/telegram-service";
 
 type RouteContext = {
   params: Promise<{
@@ -27,6 +28,12 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (!listing) {
       return NextResponse.json({ error: "Listing not found." }, { status: 404 });
+    }
+
+    try {
+      await notifySellerReservation(listing);
+    } catch (error) {
+      console.error("Seller Telegram notification failed:", error);
     }
 
     return NextResponse.json(listing);

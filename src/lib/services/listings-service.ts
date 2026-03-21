@@ -42,6 +42,7 @@ export async function createListing(input: ListingDraftInput) {
     condition: draft.condition,
     priceTon: draft.priceTon,
     sellerHandle: input.sellerHandle,
+    sellerTelegramChatId: input.sellerChatId,
     city: input.city,
     imageUrl:
       imageResult.imageUrl ||

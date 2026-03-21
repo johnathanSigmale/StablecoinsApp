@@ -267,6 +267,7 @@ export async function POST(request: Request) {
     const listing = await createListing({
       sellerPrompt: prompt,
       sellerHandle: message?.from?.username ? `@${message.from.username}` : "@telegram_seller",
+      sellerChatId: message?.chat?.id,
       city: message?.chat?.title || "Telegram community",
       imageUrl: attachment.dataUrl,
     });

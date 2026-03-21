@@ -36,6 +36,7 @@ export type Listing = {
   condition: string;
   priceTon: number;
   sellerHandle: string;
+  sellerTelegramChatId?: number;
   city: string;
   imageUrl: string;
   createdAt: string;
@@ -49,6 +50,7 @@ export type ListingDraftInput = {
   sellerPrompt: string;
   imageUrl?: string;
   sellerHandle: string;
+  sellerChatId?: number;
   city: string;
   desiredPriceTon?: number;
 };
