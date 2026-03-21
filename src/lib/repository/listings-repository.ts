@@ -1,10 +1,9 @@
-import { kv } from "@vercel/kv";
 import { promises as fs } from "fs";
 import path from "path";
 
 import type { Listing } from "@/lib/types";
+import { hasRedisStore, readRedisJson, writeRedisJson } from "@/lib/server/redis-store";
 
-const hasKv = Boolean(process.env.KV_URL);
 const runtimeDirectory = process.env.TMPDIR || process.env.TEMP || "/tmp";
 const localStoragePath =
   process.env.NODE_ENV === "production"
@@ -38,27 +37,25 @@ async function writeLocalListings(listings: Listing[]) {
 }
 
 export async function readListings() {
-  if (hasKv) {
-    try {
-      const listings = await kv.get<Listing[]>("listings");
-      if (Array.isArray(listings)) {
-        return listings;
-      }
-    } catch (error) {
-      console.error("KV read failed, falling back to local storage:", error);
+  if (hasRedisStore()) {
+    const listings = await readRedisJson<Listing[]>("listings");
+    if (Array.isArray(listings)) {
+      return listings;
     }
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    console.warn("Persistent Redis storage is not configured. Falling back to local runtime storage.");
   }
 
   return readLocalListings();
 }
 
 export async function writeListings(listings: Listing[]) {
-  if (hasKv) {
-    try {
-      await kv.set("listings", listings);
+  if (hasRedisStore()) {
+    const stored = await writeRedisJson("listings", listings);
+    if (stored) {
       return;
-    } catch (error) {
-      console.error("KV write failed, falling back to local storage:", error);
     }
   }
 

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { kv } from "@vercel/kv";
-
+import { acquireRedisLock, hasRedisStore } from "@/lib/server/redis-store";
 import { createListing } from "@/lib/services/listings-service";
 
 type TelegramMessage = {
@@ -61,13 +60,12 @@ export async function POST(request: Request) {
   const chatId = message?.chat?.id;
   const prompt = (message?.caption || message?.text || "").trim();
 
-  if (process.env.KV_URL && message?.message_id) {
+  if (hasRedisStore() && message?.message_id) {
     const lockKey = `msg_lock:${message.chat?.id || "unknown"}:${message.message_id}`;
-    const exists = await kv.get(lockKey);
-    if (exists) {
+    const acquired = await acquireRedisLock(lockKey, 60);
+    if (!acquired) {
       return NextResponse.json({ ok: true, duplicated: true });
     }
-    await kv.set(lockKey, "processed", { ex: 60 });
   }
 
   if (!prompt) {
@@ -127,7 +125,7 @@ export async function POST(request: Request) {
     if (chatId) {
       await sendTelegramMessage(
         chatId,
-        "I could not create the listing. Check NEXT_PUBLIC_APP_URL, GEMINI_API_KEY, and storage configuration, then try again.",
+        "I could not create the listing. Check NEXT_PUBLIC_APP_URL, storage configuration, and deployment logs, then try again.",
       );
     }
 
