@@ -106,9 +106,12 @@ export default async function ListingPage({ params }: ListingPageProps) {
 
       <section className="twoUp">
         <article className="glassPanel">
-          <span className="eyebrow">Escrow Flow</span>
-          <h2>{escrowStep.title}</h2>
-          <p>{escrowStep.description}</p>
+          <span className="eyebrow">Generation Debug</span>
+          <h2>
+            Text: {listing.generation?.textSource || "unknown"} | Image: {listing.generation?.imageSource || "unknown"}
+          </h2>
+          <p>{listing.generation?.textStatusMessage || "No text status available."}</p>
+          <p>{listing.generation?.imageStatusMessage || "No image status available."}</p>
           <div className="tagRow">
             {listing.aiInsights.tags.map((tag) => (
               <span key={tag} className="tag">

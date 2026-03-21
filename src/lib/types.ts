@@ -7,6 +7,13 @@ export type ListingAiInsights = {
   tags: string[];
 };
 
+export type ListingGeneration = {
+  textSource: "gemini" | "fallback";
+  imageSource: "gemini-image" | "seller-photo" | "fallback";
+  textStatusMessage?: string;
+  imageStatusMessage?: string;
+};
+
 export type ListingEscrow = {
   status: EscrowStatus;
   buyer: string | null;
@@ -34,6 +41,7 @@ export type Listing = {
   createdAt: string;
   status: ListingStatus;
   aiInsights: ListingAiInsights;
+  generation?: ListingGeneration;
   escrow: ListingEscrow;
 };
 

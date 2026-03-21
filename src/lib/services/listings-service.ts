@@ -1,4 +1,9 @@
-import { createListingId, generateListingDraft, generateListingHeroImage } from "@/lib/services/ai-listing-service";
+import {
+  createListingId,
+  generateListingDraft,
+  generateListingDraftResult,
+  generateListingHeroImageResult,
+} from "@/lib/services/ai-listing-service";
 import { getListingById, readListings, writeListings } from "@/lib/repository/listings-repository";
 import type { EscrowStatus, Listing, ListingDraftInput, PurchaseIntent } from "@/lib/types";
 
@@ -24,9 +29,10 @@ export async function findListing(id: string) {
 }
 
 export async function createListing(input: ListingDraftInput) {
-  const draft = await generateListingDraft(input);
+  const draftResult = await generateListingDraftResult(input);
+  const draft = draftResult.draft;
   const createdAt = nowIso();
-  const generatedImageUrl = await generateListingHeroImage(input, draft);
+  const imageResult = await generateListingHeroImageResult(input, draft);
 
   const listing: Listing = {
     id: createListingId(draft.title),
@@ -38,12 +44,18 @@ export async function createListing(input: ListingDraftInput) {
     sellerHandle: input.sellerHandle,
     city: input.city,
     imageUrl:
-      generatedImageUrl ||
+      imageResult.imageUrl ||
       input.imageUrl ||
       "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80",
     createdAt,
     status: "active",
     aiInsights: draft.aiInsights,
+    generation: {
+      textSource: draftResult.source,
+      imageSource: imageResult.source,
+      textStatusMessage: draftResult.statusMessage,
+      imageStatusMessage: imageResult.statusMessage,
+    },
     escrow: {
       status: "draft",
       buyer: null,

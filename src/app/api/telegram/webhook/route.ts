@@ -110,9 +110,8 @@ async function getTelegramPhotoDataUrl(fileId: string) {
   }
 
   const headerMimeType = fileResponse.headers.get("content-type");
-  const mimeType = headerMimeType && headerMimeType.startsWith("image/")
-    ? headerMimeType
-    : inferMimeTypeFromFilePath(filePath);
+  const mimeType =
+    headerMimeType && headerMimeType.startsWith("image/") ? headerMimeType : inferMimeTypeFromFilePath(filePath);
 
   const bytes = Buffer.from(await fileResponse.arrayBuffer());
   return `data:${mimeType};base64,${bytes.toString("base64")}`;
@@ -168,8 +167,6 @@ export async function POST(request: Request) {
     });
 
     const listingUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/listings/${listing.id}`;
-    const aiMode = process.env.GEMINI_API_KEY ? "Gemini active" : "fallback mode";
-    const photoMode = photoDataUrl ? "seller photo attached" : "no seller photo";
 
     if (chatId) {
       await sendTelegramMessage(
@@ -179,12 +176,16 @@ export async function POST(request: Request) {
           "",
           `Item: ${listing.title}`,
           `Price: ${listing.priceTon} TON`,
-          `Mode: ${aiMode}`,
-          `Image: ${photoMode}`,
+          `Text source: ${listing.generation?.textSource || "unknown"}`,
+          `Image source: ${listing.generation?.imageSource || "unknown"}`,
+          listing.generation?.textStatusMessage ? `Text status: ${listing.generation.textStatusMessage}` : "",
+          listing.generation?.imageStatusMessage ? `Image status: ${listing.generation.imageStatusMessage}` : "",
           "",
           "Open and share this listing:",
           listingUrl,
-        ].join("\n"),
+        ]
+          .filter(Boolean)
+          .join("\n"),
         listingUrl,
       );
     }
@@ -193,8 +194,7 @@ export async function POST(request: Request) {
       ok: true,
       listingId: listing.id,
       nextStep: listingUrl,
-      aiMode,
-      photoMode,
+      generation: listing.generation,
     });
   } catch (error) {
     console.error("Telegram listing creation failed:", error);

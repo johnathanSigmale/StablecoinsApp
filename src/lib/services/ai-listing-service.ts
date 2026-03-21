@@ -21,6 +21,18 @@ type GeminiResponsePart = {
   };
 };
 
+type DraftResult = {
+  draft: ListingDraft;
+  source: "gemini" | "fallback";
+  statusMessage: string;
+};
+
+type HeroImageResult = {
+  imageUrl: string | null;
+  source: "gemini-image" | "seller-photo" | "fallback";
+  statusMessage: string;
+};
+
 function inlinePartFromDataUrl(dataUrl: string): GeminiPart | null {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) {
@@ -54,7 +66,7 @@ function inferCategory(prompt: string) {
     return "Cameras";
   }
 
-  if (normalized.match(/phone|iphone|android|pixel|samsung/)) {
+  if (normalized.match(/phone|iphone|android|pixel|samsung|galaxy/)) {
     return "Phones";
   }
 
@@ -72,7 +84,7 @@ function inferCondition(prompt: string) {
     return "Very Good";
   }
 
-  if (normalized.match(/used|good|works well/)) {
+  if (normalized.match(/used|good|works well|bon etat|bon état/)) {
     return "Good";
   }
 
@@ -114,7 +126,7 @@ function inferPrice(prompt: string, desiredPriceTon?: number) {
     return 150;
   }
 
-  if (normalized.match(/phone|iphone|pixel/)) {
+  if (normalized.match(/phone|iphone|pixel|galaxy/)) {
     return 260;
   }
 
@@ -142,7 +154,15 @@ function extractTags(prompt: string, category: string, city: string) {
   return Array.from(new Set([...normalizedWords, category.toLowerCase(), city.toLowerCase()])).slice(0, 6);
 }
 
-function fallbackDraft(input: ListingDraftInput): ListingDraft {
+function rewriteFallbackSummary(prompt: string, title: string, city: string, condition: string) {
+  return [
+    `${title} offered in ${condition.toLowerCase()} condition.`,
+    `Local handoff available in ${city}.`,
+    "Buyer can lock TON first, inspect the item in person, and release funds only after validation.",
+  ].join(" ");
+}
+
+function fallbackDraft(input: ListingDraftInput): DraftResult {
   const explicitPriceTon = input.desiredPriceTon ?? extractExplicitTonPrice(input.sellerPrompt);
   const category = inferCategory(input.sellerPrompt);
   const condition = inferCondition(input.sellerPrompt);
@@ -155,12 +175,16 @@ function fallbackDraft(input: ListingDraftInput): ListingDraft {
   };
 
   return {
-    title,
-    summary: `${input.sellerPrompt.trim()} Secure the meetup with TON escrow instead of cash and release funds after verification.`,
-    category,
-    condition,
-    priceTon,
-    aiInsights,
+    draft: {
+      title,
+      summary: rewriteFallbackSummary(input.sellerPrompt, title, input.city, condition),
+      category,
+      condition,
+      priceTon,
+      aiInsights,
+    },
+    source: "fallback",
+    statusMessage: "Gemini text generation failed, so fallback copy generation was used.",
   };
 }
 
@@ -204,10 +228,10 @@ async function fetchImageAsInlinePart(imageUrl: string): Promise<GeminiPart | nu
   };
 }
 
-async function geminiDraft(input: ListingDraftInput) {
+export async function generateListingDraftResult(input: ListingDraftInput): Promise<DraftResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return null;
+    return fallbackDraft(input);
   }
 
   const explicitPriceTon = input.desiredPriceTon ?? extractExplicitTonPrice(input.sellerPrompt);
@@ -216,8 +240,9 @@ async function geminiDraft(input: ListingDraftInput) {
     {
       text: [
         "You help sellers create Telegram-native second-hand electronics listings for a TON commerce assistant.",
-        "Return JSON only with keys: title, summary, category, condition, priceTon, aiInsights.",
+        "Return strict JSON only with keys: title, summary, category, condition, priceTon, aiInsights.",
         "aiInsights must contain suggestedTitle, pricingRationale, and tags.",
+        "Rewrite the description in polished marketplace language. Do not copy the seller sentence verbatim.",
         "Use the provided image when it is present to infer the actual product and avoid generic wording.",
         "If the seller explicitly provided a TON price, preserve that exact TON price in the output.",
         `Seller handle: ${input.sellerHandle}`,
@@ -235,54 +260,60 @@ async function geminiDraft(input: ListingDraftInput) {
     }
   }
 
-  const response = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts,
-          },
-        ],
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    const body = await response.text();
-    console.error("Gemini text generation failed:", body);
-    return null;
-  }
-
-  const payload = (await response.json()) as {
-    candidates?: Array<{
-      content?: {
-        parts?: Array<{ text?: string }>;
-      };
-    }>;
-  };
-
-  const content = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("\n").trim();
-  if (!content) {
-    return null;
-  }
-
   try {
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts,
+            },
+          ],
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.error("Gemini text generation failed:", body);
+      return fallbackDraft(input);
+    }
+
+    const payload = (await response.json()) as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{ text?: string }>;
+        };
+      }>;
+    };
+
+    const content = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("\n").trim();
+    if (!content) {
+      return fallbackDraft(input);
+    }
+
     const parsed = JSON.parse(extractJsonCandidate(content)) as ListingDraft;
     if (!parsed.title || !parsed.summary || !parsed.category || !parsed.condition || !parsed.aiInsights) {
-      return null;
+      return fallbackDraft(input);
     }
 
     parsed.priceTon = explicitPriceTon || Number(parsed.priceTon) || inferPrice(input.sellerPrompt, explicitPriceTon);
     parsed.aiInsights.tags = parsed.aiInsights.tags?.slice(0, 6) || [];
-    return parsed;
-  } catch {
-    return null;
+
+    return {
+      draft: parsed,
+      source: "gemini",
+      statusMessage: "Gemini text generation succeeded.",
+    };
+  } catch (error) {
+    console.error("Gemini text generation threw an error:", error);
+    return fallbackDraft(input);
   }
 }
 
@@ -301,10 +332,16 @@ function extractInlineImagePart(parts: GeminiResponsePart[]) {
   return null;
 }
 
-export async function generateListingHeroImage(input: ListingDraftInput, draft: ListingDraft) {
+export async function generateListingHeroImageResult(input: ListingDraftInput, draft: ListingDraft): Promise<HeroImageResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return input.imageUrl || null;
+    return {
+      imageUrl: input.imageUrl || null,
+      source: input.imageUrl ? "seller-photo" : "fallback",
+      statusMessage: input.imageUrl
+        ? "Using the seller photo because Gemini image generation is unavailable."
+        : "No seller photo and no Gemini image generation available.",
+    };
   }
 
   const prompt = [
@@ -316,52 +353,62 @@ export async function generateListingHeroImage(input: ListingDraftInput, draft: 
     `Seller description: ${input.sellerPrompt}`,
   ].join("\n");
 
-  const parts: GeminiPart[] = [{ text: prompt }];
-  if (input.imageUrl) {
-    const imagePart = await fetchImageAsInlinePart(input.imageUrl);
-    if (imagePart) {
-      parts.push(imagePart);
-    }
-  }
-
-  const response = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent",
-    {
+  try {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-goog-api-key": apiKey,
       },
       body: JSON.stringify({
-        contents: [
-          {
-            parts,
-          },
-        ],
+        model: "gemini-3-pro-image-preview",
+        input: prompt,
+        response_modalities: ["IMAGE"],
       }),
-    },
-  );
+    });
 
-  if (!response.ok) {
-    const body = await response.text();
-    console.error("Gemini image generation failed:", body);
-    return input.imageUrl || null;
+    if (response.ok) {
+      const payload = (await response.json()) as {
+        outputs?: Array<{
+          type?: string;
+          mime_type?: string;
+          data?: string;
+        }>;
+      };
+
+      const imageOutput = payload.outputs?.find((output) => output.type === "image" && output.mime_type?.startsWith("image/") && output.data);
+      if (imageOutput?.mime_type && imageOutput.data) {
+        return {
+          imageUrl: `data:${imageOutput.mime_type};base64,${imageOutput.data}`,
+          source: "gemini-image",
+          statusMessage: "Gemini generated a hero image successfully.",
+        };
+      }
+    } else {
+      const body = await response.text();
+      console.error("Gemini image generation failed:", body);
+    }
+  } catch (error) {
+    console.error("Gemini image generation threw an error:", error);
   }
 
-  const payload = (await response.json()) as {
-    candidates?: Array<{
-      content?: {
-        parts?: GeminiResponsePart[];
-      };
-    }>;
-  };
+  if (input.imageUrl) {
+    return {
+      imageUrl: input.imageUrl,
+      source: "seller-photo",
+      statusMessage: "Gemini image generation failed, so the seller photo is used instead.",
+    };
+  }
 
-  const generatedImage = extractInlineImagePart(payload.candidates?.[0]?.content?.parts || []);
-  return generatedImage || input.imageUrl || null;
+  return {
+    imageUrl: null,
+    source: "fallback",
+    statusMessage: "Gemini image generation failed and no seller photo was available.",
+  };
 }
 
 export async function generateListingDraft(input: ListingDraftInput) {
-  return (await geminiDraft(input)) ?? fallbackDraft(input);
+  return (await generateListingDraftResult(input)).draft;
 }
 
 export function createListingId(title: string) {
