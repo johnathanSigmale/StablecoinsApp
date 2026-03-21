@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 
+import { kv } from "@vercel/kv";
 import { createListing } from "@/lib/services/listings-service";
 
 type TelegramMessage = {
+  message_id: number;
   caption?: string;
   text?: string;
   photo?: Array<{ file_id: string }>;
@@ -21,6 +23,16 @@ export async function POST(request: Request) {
   };
 
   const message = payload.message;
+  
+  // Anti-duplication check using Vercel KV
+  if (process.env.KV_URL && message?.message_id) {
+    const lockKey = `msg_lock:${message.message_id}`;
+    const exists = await kv.get(lockKey);
+    if (exists) {
+      return NextResponse.json({ ok: true, duplicated: true });
+    }
+    await kv.set(lockKey, "processed", { ex: 60 }); // TTL 60s
+  }
   const prompt = message?.caption || message?.text;
 
   if (!prompt) {

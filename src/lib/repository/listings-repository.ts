@@ -1,30 +1,40 @@
+import { kv } from "@vercel/kv";
 import { promises as fs } from "fs";
 import path from "path";
 
 import type { Listing } from "@/lib/types";
 
-const dataPath = process.env.NODE_ENV === "production" 
-  ? path.join("/tmp", "listings.json")
-  : path.join(process.cwd(), "data", "listings.json");
+const LOCAL_STORAGE_PATH = path.join(process.cwd(), "data", "listings.json");
 
-async function ensureStore() {
+async function getLocalListings() {
   try {
-    await fs.access(dataPath);
+    const raw = await fs.readFile(LOCAL_STORAGE_PATH, "utf8");
+    return JSON.parse(raw) as Listing[];
   } catch {
-    await fs.mkdir(path.dirname(dataPath), { recursive: true });
-    await fs.writeFile(dataPath, "[]", "utf8");
+    return [];
   }
 }
 
 export async function readListings() {
-  await ensureStore();
-  const raw = await fs.readFile(dataPath, "utf8");
-  return JSON.parse(raw) as Listing[];
+  if (process.env.NODE_ENV === "production" || process.env.KV_URL) {
+    try {
+      const listings = await kv.get<Listing[]>("listings");
+      return listings || [];
+    } catch (error) {
+      console.error("KV Read Error:", error);
+      return [];
+    }
+  }
+  return getLocalListings();
 }
 
 export async function writeListings(listings: Listing[]) {
-  await ensureStore();
-  await fs.writeFile(dataPath, JSON.stringify(listings, null, 2), "utf8");
+  if (process.env.NODE_ENV === "production" || process.env.KV_URL) {
+    await kv.set("listings", listings);
+  } else {
+    await fs.mkdir(path.dirname(LOCAL_STORAGE_PATH), { recursive: true });
+    await fs.writeFile(LOCAL_STORAGE_PATH, JSON.stringify(listings, null, 2), "utf8");
+  }
 }
 
 export async function getListingById(id: string) {
