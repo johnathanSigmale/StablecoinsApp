@@ -1,0 +1,430 @@
+:root {
+  color-scheme: dark;
+  --bg: #08111f;
+  --bg-soft: #0f1b31;
+  --panel: rgba(12, 22, 39, 0.84);
+  --panel-border: rgba(255, 255, 255, 0.09);
+  --text: #eff6ff;
+  --muted: #a7b7d1;
+  --mint: #a5ffb2;
+  --cyan: #57c3ff;
+  --amber: #ffd581;
+  --danger: #ff9d9d;
+  --radius-lg: 28px;
+  --radius-md: 20px;
+  --shadow: 0 24px 80px rgba(3, 10, 24, 0.45);
+  --font-sans: "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(87, 195, 255, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(165, 255, 178, 0.15), transparent 22%),
+    linear-gradient(180deg, #07101d 0%, #08111f 52%, #060c17 100%);
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.pageShell {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0 80px;
+}
+
+.heroSection,
+.listingDetail,
+.twoUp,
+.threeUp,
+.sectionHeader,
+.listingGrid {
+  margin-top: 24px;
+}
+
+.heroSection {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 24px;
+  align-items: stretch;
+  padding-top: 24px;
+}
+
+.heroCopy h1,
+.sectionHeader h1,
+.sectionHeader h2,
+.glassPanel h2,
+.listingVisual h1 {
+  margin: 10px 0 0;
+  line-height: 1.02;
+}
+
+.heroCopy h1 {
+  font-size: clamp(3rem, 7vw, 5.8rem);
+  max-width: 11ch;
+}
+
+.heroCopy p,
+.glassPanel p,
+.listingVisual p,
+.mutedText,
+.listingSummary,
+.detailCopy p {
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--mint);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.eyebrow::before {
+  content: "";
+  width: 28px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--cyan), transparent);
+}
+
+.glassPanel {
+  background: var(--panel);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 24px;
+}
+
+.heroPanel {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 420px;
+  overflow: hidden;
+}
+
+.chatBubble {
+  border-radius: 24px;
+  padding: 18px;
+  max-width: 85%;
+}
+
+.chatBubble span {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.sellerBubble {
+  align-self: flex-end;
+  background: rgba(87, 195, 255, 0.14);
+}
+
+.botBubble {
+  align-self: flex-start;
+  background: rgba(165, 255, 178, 0.14);
+}
+
+.metricStrip,
+.detailStats,
+.formGrid,
+.threeUp,
+.twoUp,
+.listingGrid,
+.actionRow,
+.purchaseHeader,
+.listingHeader,
+.listingMeta,
+.pillRow,
+.tagRow {
+  display: flex;
+  gap: 16px;
+}
+
+.metricStrip,
+.detailStats,
+.formGrid,
+.threeUp,
+.twoUp,
+.listingGrid {
+  flex-wrap: wrap;
+}
+
+.metricStrip {
+  margin-top: 24px;
+  border-top: 1px solid var(--panel-border);
+  padding-top: 18px;
+}
+
+.metricStrip > div,
+.detailStats > div {
+  display: grid;
+  gap: 4px;
+}
+
+.metricStrip strong,
+.detailStats strong {
+  font-size: 1.08rem;
+}
+
+.metricStrip span,
+.detailStats span,
+.listingMeta span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.actionRow {
+  margin-top: 24px;
+}
+
+.primaryButton,
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  border-radius: 999px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.primaryButton {
+  background: linear-gradient(135deg, var(--mint), #69ffc2);
+  color: #051019;
+  font-weight: 700;
+}
+
+.secondaryButton {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--panel-border);
+  color: var(--text);
+}
+
+.primaryButton:hover,
+.secondaryButton:hover {
+  transform: translateY(-1px);
+}
+
+.threeUp > article,
+.twoUp > article {
+  flex: 1 1 280px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.listingGrid > * {
+  flex: 1 1 320px;
+}
+
+.listingCard {
+  background: rgba(12, 22, 39, 0.76);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.listingImage,
+.detailImage {
+  background-size: cover;
+  background-position: center;
+}
+
+.listingImage {
+  height: 220px;
+}
+
+.listingContent,
+.detailCopy {
+  padding: 22px;
+}
+
+.listingHeader,
+.purchaseHeader {
+  justify-content: space-between;
+  align-items: start;
+}
+
+.listingHeader h3,
+.listingHeader p,
+.purchaseHeader h2 {
+  margin: 0;
+}
+
+.listingSummary {
+  min-height: 78px;
+}
+
+.listingMeta {
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.pill,
+.tag {
+  display: inline-flex;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pillMuted {
+  color: var(--amber);
+}
+
+.formPanel {
+  display: grid;
+  gap: 18px;
+}
+
+.formIntro {
+  max-width: 58ch;
+}
+
+label {
+  display: grid;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+input,
+textarea,
+pre.shareBox,
+.codePanel {
+  width: 100%;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(2, 9, 20, 0.52);
+  color: var(--text);
+  padding: 14px 16px;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.listingDetail {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.listingVisual {
+  overflow: hidden;
+  padding: 0;
+}
+
+.detailImage {
+  min-height: 360px;
+}
+
+.purchasePanel {
+  display: grid;
+  gap: 16px;
+  position: sticky;
+  top: 24px;
+}
+
+.codePanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.errorText {
+  color: var(--danger);
+  margin: 0;
+}
+
+.successText {
+  color: var(--mint);
+  margin: 0;
+}
+
+.shareBox {
+  white-space: pre-wrap;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+@media (max-width: 960px) {
+  .heroSection,
+  .listingDetail {
+    grid-template-columns: 1fr;
+  }
+
+  .purchasePanel {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .pageShell {
+    width: min(100% - 20px, 1180px);
+    padding-top: 20px;
+  }
+
+  .glassPanel,
+  .listingContent,
+  .detailCopy {
+    padding: 18px;
+  }
+
+  .heroCopy h1 {
+    max-width: 100%;
+  }
+
+  .sectionHeader {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .actionRow,
+  .purchaseHeader,
+  .listingHeader,
+  .listingMeta {
+    flex-direction: column;
+  }
+}

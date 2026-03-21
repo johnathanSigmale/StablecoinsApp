@@ -1,0 +1,71 @@
+[
+  {
+    "id": "vr-headset-quest2",
+    "title": "Meta Quest 2 128GB",
+    "summary": "VR headset in excellent condition, perfect for local meetup sales with instant escrow release.",
+    "category": "VR & Gaming",
+    "condition": "Excellent",
+    "priceTon": 145,
+    "sellerHandle": "@nora_dev",
+    "city": "Casablanca",
+    "imageUrl": "https://images.unsplash.com/photo-1622979135225-d2ba269cf1ac?auto=format&fit=crop&w=1200&q=80",
+    "createdAt": "2026-03-21T09:00:00.000Z",
+    "status": "active",
+    "aiInsights": {
+      "suggestedTitle": "Meta Quest 2 128GB",
+      "pricingRationale": "Comparable second-hand VR headsets usually clear around 130-160 TON when complete and clean.",
+      "tags": ["vr", "gaming", "meta", "quest", "casablanca"]
+    },
+    "escrow": {
+      "status": "draft",
+      "buyer": null,
+      "lastUpdatedAt": "2026-03-21T09:00:00.000Z"
+    }
+  },
+  {
+    "id": "gaming-laptop-legion",
+    "title": "Lenovo Legion 5 RTX 3060",
+    "summary": "A gaming laptop for creators and students who want strong graphics without carrying cash to a meetup.",
+    "category": "Computers",
+    "condition": "Very Good",
+    "priceTon": 410,
+    "sellerHandle": "@amine_builds",
+    "city": "Rabat",
+    "imageUrl": "https://images.unsplash.com/photo-1603302576837-37561b2e2302?auto=format&fit=crop&w=1200&q=80",
+    "createdAt": "2026-03-21T09:15:00.000Z",
+    "status": "active",
+    "aiInsights": {
+      "suggestedTitle": "Lenovo Legion 5 RTX 3060",
+      "pricingRationale": "Mid-tier gaming laptops with RTX graphics stay liquid when priced below brand-new alternatives.",
+      "tags": ["laptop", "gaming", "rtx", "lenovo", "rabat"]
+    },
+    "escrow": {
+      "status": "draft",
+      "buyer": null,
+      "lastUpdatedAt": "2026-03-21T09:15:00.000Z"
+    }
+  },
+  {
+    "id": "ipad-air-pencil",
+    "title": "iPad Air + Pencil Bundle",
+    "summary": "Lightweight creator setup with bundle pricing and a quick escrow-assisted pickup flow.",
+    "category": "Tablets",
+    "condition": "Good",
+    "priceTon": 230,
+    "sellerHandle": "@salma.creates",
+    "city": "Marrakech",
+    "imageUrl": "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=1200&q=80",
+    "createdAt": "2026-03-21T09:30:00.000Z",
+    "status": "active",
+    "aiInsights": {
+      "suggestedTitle": "iPad Air + Pencil Bundle",
+      "pricingRationale": "Bundles convert well when setup value is obvious and pickup friction is low.",
+      "tags": ["tablet", "apple", "pencil", "creator", "marrakech"]
+    },
+    "escrow": {
+      "status": "draft",
+      "buyer": null,
+      "lastUpdatedAt": "2026-03-21T09:30:00.000Z"
+    }
+  }
+]
