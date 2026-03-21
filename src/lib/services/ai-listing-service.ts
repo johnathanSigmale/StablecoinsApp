@@ -9,6 +9,20 @@ type GeminiPart = {
   };
 };
 
+function inlinePartFromDataUrl(dataUrl: string): GeminiPart | null {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    inline_data: {
+      mime_type: match[1],
+      data: match[2],
+    },
+  };
+}
+
 function inferCategory(prompt: string) {
   const normalized = prompt.toLowerCase();
 
@@ -144,6 +158,10 @@ function extractJsonCandidate(content: string) {
 }
 
 async function fetchImageAsInlinePart(imageUrl: string): Promise<GeminiPart | null> {
+  if (imageUrl.startsWith("data:image/")) {
+    return inlinePartFromDataUrl(imageUrl);
+  }
+
   const response = await fetch(imageUrl);
   if (!response.ok) {
     return null;
@@ -175,6 +193,7 @@ async function geminiDraft(input: ListingDraftInput) {
         "You help sellers create Telegram-native second-hand electronics listings for a TON commerce assistant.",
         "Return JSON only with keys: title, summary, category, condition, priceTon, aiInsights.",
         "aiInsights must contain suggestedTitle, pricingRationale, and tags.",
+        "Use the provided image when it is present to infer the actual product and avoid generic wording.",
         `Seller handle: ${input.sellerHandle}`,
         `City: ${input.city}`,
         input.desiredPriceTon ? `Preferred price TON: ${input.desiredPriceTon}` : "Preferred price TON: none",
