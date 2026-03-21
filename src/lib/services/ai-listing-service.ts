@@ -121,6 +121,16 @@ function inferPrice(prompt: string, desiredPriceTon?: number) {
   return 120;
 }
 
+function extractExplicitTonPrice(prompt: string) {
+  const match = prompt.match(/(\d+(?:[.,]\d+)?)\s*ton\b/i);
+  if (!match) {
+    return undefined;
+  }
+
+  const parsed = Number(match[1].replace(",", "."));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 function extractTags(prompt: string, category: string, city: string) {
   const normalizedWords = prompt
     .toLowerCase()
@@ -133,10 +143,11 @@ function extractTags(prompt: string, category: string, city: string) {
 }
 
 function fallbackDraft(input: ListingDraftInput): ListingDraft {
+  const explicitPriceTon = input.desiredPriceTon ?? extractExplicitTonPrice(input.sellerPrompt);
   const category = inferCategory(input.sellerPrompt);
   const condition = inferCondition(input.sellerPrompt);
   const title = inferTitle(input.sellerPrompt, category);
-  const priceTon = inferPrice(input.sellerPrompt, input.desiredPriceTon);
+  const priceTon = inferPrice(input.sellerPrompt, explicitPriceTon);
   const aiInsights: ListingAiInsights = {
     suggestedTitle: title,
     pricingRationale: `${toneFromCondition(condition)} Comparable listings in local Telegram groups should respond around ${priceTon} TON.`,
@@ -199,6 +210,8 @@ async function geminiDraft(input: ListingDraftInput) {
     return null;
   }
 
+  const explicitPriceTon = input.desiredPriceTon ?? extractExplicitTonPrice(input.sellerPrompt);
+
   const parts: GeminiPart[] = [
     {
       text: [
@@ -206,9 +219,10 @@ async function geminiDraft(input: ListingDraftInput) {
         "Return JSON only with keys: title, summary, category, condition, priceTon, aiInsights.",
         "aiInsights must contain suggestedTitle, pricingRationale, and tags.",
         "Use the provided image when it is present to infer the actual product and avoid generic wording.",
+        "If the seller explicitly provided a TON price, preserve that exact TON price in the output.",
         `Seller handle: ${input.sellerHandle}`,
         `City: ${input.city}`,
-        input.desiredPriceTon ? `Preferred price TON: ${input.desiredPriceTon}` : "Preferred price TON: none",
+        explicitPriceTon ? `Preferred price TON: ${explicitPriceTon}` : "Preferred price TON: none",
         `Seller prompt: ${input.sellerPrompt}`,
       ].join("\n"),
     },
@@ -264,7 +278,7 @@ async function geminiDraft(input: ListingDraftInput) {
       return null;
     }
 
-    parsed.priceTon = Number(parsed.priceTon) || inferPrice(input.sellerPrompt, input.desiredPriceTon);
+    parsed.priceTon = explicitPriceTon || Number(parsed.priceTon) || inferPrice(input.sellerPrompt, explicitPriceTon);
     parsed.aiInsights.tags = parsed.aiInsights.tags?.slice(0, 6) || [];
     return parsed;
   } catch {

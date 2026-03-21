@@ -67,6 +67,20 @@ function getBestTelegramPhoto(photos?: TelegramPhoto[]) {
   return [...photos].sort((left, right) => (right.file_size || 0) - (left.file_size || 0))[0];
 }
 
+function inferMimeTypeFromFilePath(filePath: string) {
+  const normalized = filePath.toLowerCase();
+
+  if (normalized.endsWith(".png")) {
+    return "image/png";
+  }
+
+  if (normalized.endsWith(".webp")) {
+    return "image/webp";
+  }
+
+  return "image/jpeg";
+}
+
 async function getTelegramPhotoDataUrl(fileId: string) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
@@ -95,10 +109,10 @@ async function getTelegramPhotoDataUrl(fileId: string) {
     return null;
   }
 
-  const mimeType = fileResponse.headers.get("content-type") || "image/jpeg";
-  if (!mimeType.startsWith("image/")) {
-    return null;
-  }
+  const headerMimeType = fileResponse.headers.get("content-type");
+  const mimeType = headerMimeType && headerMimeType.startsWith("image/")
+    ? headerMimeType
+    : inferMimeTypeFromFilePath(filePath);
 
   const bytes = Buffer.from(await fileResponse.arrayBuffer());
   return `data:${mimeType};base64,${bytes.toString("base64")}`;
@@ -155,6 +169,7 @@ export async function POST(request: Request) {
 
     const listingUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/listings/${listing.id}`;
     const aiMode = process.env.GEMINI_API_KEY ? "Gemini active" : "fallback mode";
+    const photoMode = photoDataUrl ? "seller photo attached" : "no seller photo";
 
     if (chatId) {
       await sendTelegramMessage(
@@ -165,6 +180,7 @@ export async function POST(request: Request) {
           `Item: ${listing.title}`,
           `Price: ${listing.priceTon} TON`,
           `Mode: ${aiMode}`,
+          `Image: ${photoMode}`,
           "",
           "Open and share this listing:",
           listingUrl,
@@ -178,6 +194,7 @@ export async function POST(request: Request) {
       listingId: listing.id,
       nextStep: listingUrl,
       aiMode,
+      photoMode,
     });
   } catch (error) {
     console.error("Telegram listing creation failed:", error);
