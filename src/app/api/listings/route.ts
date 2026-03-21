@@ -16,8 +16,8 @@ export async function POST(request: Request) {
     desiredPriceTon?: number;
   };
 
-  if (!body.sellerPrompt || !body.sellerHandle || !body.city) {
-    return NextResponse.json({ error: "sellerPrompt, sellerHandle and city are required." }, { status: 400 });
+  if (!body.sellerPrompt || !body.imageUrl || !body.sellerHandle || !body.city) {
+    return NextResponse.json({ error: "sellerPrompt, imageUrl, sellerHandle and city are required." }, { status: 400 });
   }
 
   const listing = await createListing({

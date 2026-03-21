@@ -68,7 +68,7 @@ function buildWelcomeMessage() {
     "Welcome to FlipBot AI.",
     "",
     "Send one plain-language message describing the item you want to sell.",
-    "You can also send a photo with a caption.",
+    "A seller photo is mandatory: send the image with the caption in the same message.",
     "Example: Selling my Meta Quest 2 with charger, very clean, meetup in Casablanca, 150 TON.",
     "",
     "I will generate a listing and reply with a link you can open and share.",
@@ -248,11 +248,27 @@ export async function POST(request: Request) {
   try {
     const attachment = await getTelegramImageAttachment(message, updateType);
 
+    if (!attachment.dataUrl) {
+      if (chatId) {
+        await sendTelegramMessage(
+          chatId,
+          [
+            "A seller image is required before I can create the listing.",
+            "Send one product photo with the caption in the same message, or use the mini app and paste an image URL.",
+            "",
+            `Attachment status: ${attachment.status}`,
+          ].join("\n"),
+        );
+      }
+
+      return NextResponse.json({ ok: true, imageRequired: true, attachmentStatus: attachment.status, updateType });
+    }
+
     const listing = await createListing({
       sellerPrompt: prompt,
       sellerHandle: message?.from?.username ? `@${message.from.username}` : "@telegram_seller",
       city: message?.chat?.title || "Telegram community",
-      imageUrl: attachment.dataUrl || undefined,
+      imageUrl: attachment.dataUrl,
     });
 
     const listingUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/listings/${listing.id}`;

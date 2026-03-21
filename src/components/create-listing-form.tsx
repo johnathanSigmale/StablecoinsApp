@@ -71,8 +71,8 @@ export function CreateListingForm() {
         <span className="eyebrow">Seller Flow</span>
         <h2>Create a listing from one message</h2>
         <p>
-          This mirrors the Telegram bot flow: the seller sends a natural-language message and optionally an image URL,
-          then the AI drafts a clean listing and suggested price.
+          The seller must provide a real product image. If no preferred TON price is given, Gemini proposes a market-based
+          estimate for the exact product instead of using a fixed default.
         </p>
       </div>
 
@@ -97,6 +97,7 @@ export function CreateListingForm() {
             value={form.imageUrl}
             onChange={(event) => updateField("imageUrl", event.target.value)}
             placeholder="https://..."
+            required
           />
         </label>
 

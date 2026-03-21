@@ -115,6 +115,54 @@ function inferPrice(prompt: string, desiredPriceTon?: number) {
 
   const normalized = prompt.toLowerCase();
 
+  if (normalized.match(/iphone\s*15\s*pro\s*max/)) {
+    return 340;
+  }
+
+  if (normalized.match(/iphone\s*15\s*pro/)) {
+    return 300;
+  }
+
+  if (normalized.match(/iphone\s*14\s*pro\s*max/)) {
+    return 290;
+  }
+
+  if (normalized.match(/iphone\s*14\s*pro/)) {
+    return 250;
+  }
+
+  if (normalized.match(/iphone\s*14/)) {
+    return 220;
+  }
+
+  if (normalized.match(/galaxy\s*a80/)) {
+    return 70;
+  }
+
+  if (normalized.match(/galaxy\s*s2[34]/)) {
+    return 240;
+  }
+
+  if (normalized.match(/ps5|playstation\s*5/)) {
+    return 180;
+  }
+
+  if (normalized.match(/quest\s*3/)) {
+    return 240;
+  }
+
+  if (normalized.match(/quest\s*2/)) {
+    return 140;
+  }
+
+  if (normalized.match(/ipad\s*pro/)) {
+    return 280;
+  }
+
+  if (normalized.match(/macbook\s*pro/)) {
+    return 420;
+  }
+
   if (normalized.match(/laptop|pc|legion|macbook/)) {
     return 390;
   }
@@ -123,12 +171,12 @@ function inferPrice(prompt: string, desiredPriceTon?: number) {
     return 220;
   }
 
-  if (normalized.match(/quest|vr|ps5|playstation/)) {
+  if (normalized.match(/quest|vr|gaming/)) {
     return 150;
   }
 
   if (normalized.match(/phone|iphone|pixel|galaxy/)) {
-    return 260;
+    return 160;
   }
 
   return 120;
@@ -174,7 +222,9 @@ function fallbackDraft(input: ListingDraftInput): DraftResult {
   const priceTon = inferPrice(input.sellerPrompt, explicitPriceTon);
   const aiInsights: ListingAiInsights = {
     suggestedTitle: title,
-    pricingRationale: `${toneFromCondition(condition)} Comparable listings in local Telegram groups should respond around ${priceTon} TON.`,
+    pricingRationale: explicitPriceTon
+      ? `${toneFromCondition(condition)} Seller provided an explicit price of ${explicitPriceTon} TON.`
+      : `${toneFromCondition(condition)} Fallback estimation based on the product model and category suggests around ${priceTon} TON.`,
     tags: extractTags(input.sellerPrompt, category, input.city),
   };
 
@@ -188,7 +238,9 @@ function fallbackDraft(input: ListingDraftInput): DraftResult {
       aiInsights,
     },
     source: "fallback",
-    statusMessage: "Gemini generation was unavailable, so fallback copy generation was used.",
+    statusMessage: explicitPriceTon
+      ? "Gemini generation was unavailable, so fallback copy generation preserved the seller price."
+      : "Gemini generation was unavailable, so fallback copy generation used a model-based estimate.",
   };
 }
 
@@ -295,18 +347,20 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
   }
 
   const explicitPriceTon = input.desiredPriceTon ?? extractExplicitTonPrice(input.sellerPrompt);
+  const shouldEstimatePrice = !explicitPriceTon;
   const parts: GeminiPart[] = [
     {
       text: [
         "You help sellers create Telegram-native second-hand electronics listings for a TON commerce assistant.",
         "Return JSON only.",
         "Rewrite the description in polished marketplace language. Do not copy the seller sentence verbatim.",
-        "When a seller photo is present, identify the product from the photo and use that to improve the title and summary.",
-        "Preserve any explicit TON price written by the seller.",
+        "Use the seller photo when present to identify the exact product model and improve the listing.",
+        explicitPriceTon
+          ? `The seller explicitly set the price to ${explicitPriceTon} TON. Preserve that exact TON price.`
+          : "The seller did not provide a TON price. Estimate a fair current second-hand TON price for the exact product model. Do not use a canned category default.",
         "Keep the tone concise, credible, and marketplace-ready.",
         `Seller handle: ${input.sellerHandle}`,
         `City: ${input.city}`,
-        explicitPriceTon ? `Preferred price TON: ${explicitPriceTon}` : "Preferred price TON: none",
         `Seller prompt: ${input.sellerPrompt}`,
       ].join("\n"),
     },
@@ -328,6 +382,7 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
           responseMimeType: "application/json",
           responseSchema: buildDraftSchema(),
         },
+        tools: shouldEstimatePrice ? [{ google_search: {} }] : undefined,
       },
       apiKey,
     );
@@ -351,6 +406,10 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
         content?: {
           parts?: Array<{ text?: string }>;
         };
+        groundingMetadata?: {
+          webSearchQueries?: string[];
+          groundingChunks?: unknown[];
+        };
       }>;
     };
 
@@ -372,15 +431,26 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
       };
     }
 
+    const usedSearchGrounding = Boolean(
+      payload.candidates?.[0]?.groundingMetadata?.webSearchQueries?.length ||
+        payload.candidates?.[0]?.groundingMetadata?.groundingChunks?.length,
+    );
+
     parsed.priceTon = explicitPriceTon || Number(parsed.priceTon) || inferPrice(input.sellerPrompt, explicitPriceTon);
     parsed.aiInsights.tags = parsed.aiInsights.tags?.slice(0, 6) || [];
+
+    if (!explicitPriceTon && !parsed.aiInsights.pricingRationale) {
+      parsed.aiInsights.pricingRationale = `AI-estimated market price for the product is about ${parsed.priceTon} TON.`;
+    }
 
     return {
       draft: parsed,
       source: "gemini",
-      statusMessage: input.imageUrl
-        ? `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using the seller photo and prompt.`
-        : `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using the seller prompt.`,
+      statusMessage: explicitPriceTon
+        ? `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} while preserving the seller price.`
+        : usedSearchGrounding
+          ? `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using Google Search grounding for price estimation.`
+          : `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using model-based price estimation.`,
     };
   } catch (error) {
     console.error("Gemini text generation threw an error:", error);
