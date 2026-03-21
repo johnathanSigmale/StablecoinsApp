@@ -32,13 +32,8 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Listing not found." }, { status: 404 });
     }
 
-    try {
-      await notifySellerReservation(listing);
-    } catch (error) {
-      console.error("Seller Telegram notification failed:", error);
-    }
-
-    return NextResponse.json(listing);
+    const sellerNotification = await notifySellerReservation(listing);
+    return NextResponse.json({ listing, sellerNotification });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to reserve listing.";
     return NextResponse.json({ error: message }, { status: 400 });

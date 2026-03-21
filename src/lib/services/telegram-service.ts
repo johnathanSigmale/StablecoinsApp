@@ -80,7 +80,10 @@ export function buildTelegramShareUrl(listing: Listing) {
 export async function sendTelegramBotMessage(chatId: number, text: string, rows?: TelegramInlineButton[][]) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
-    return false;
+    return {
+      ok: false,
+      error: "Missing TELEGRAM_BOT_TOKEN.",
+    };
   }
 
   const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -99,7 +102,17 @@ export async function sendTelegramBotMessage(chatId: number, text: string, rows?
     }),
   });
 
-  return response.ok;
+  if (response.ok) {
+    return { ok: true as const };
+  }
+
+  const errorBody = await response.text().catch(() => "");
+  console.error("Telegram sendMessage failed:", response.status, errorBody);
+
+  return {
+    ok: false as const,
+    error: `Telegram sendMessage failed with HTTP ${response.status}${errorBody ? `: ${errorBody}` : ""}`,
+  };
 }
 
 export async function answerTelegramCallbackQuery(callbackQueryId: string, text: string) {
@@ -125,11 +138,14 @@ export async function answerTelegramCallbackQuery(callbackQueryId: string, text:
 
 export async function notifySellerReservation(listing: Listing) {
   if (!listing.sellerTelegramChatId) {
-    return false;
+    return {
+      ok: false as const,
+      error: "Listing has no sellerTelegramChatId. Create the listing from the bot before testing seller notifications.",
+    };
   }
 
   const listingUrl = buildListingUrl(listing);
-  const buyerContactUrl = buildContactUrl(listing.escrow.buyerContact || listing.escrow.buyer);
+  const buyerTelegramUrl = buildTelegramUserUrl(listing.escrow.buyerContact || listing.escrow.buyer);
   const rows: TelegramInlineButton[][] = [
     [
       { text: "Accept meetup", callback_data: `seller_accept:${listing.id}` },
@@ -138,11 +154,11 @@ export async function notifySellerReservation(listing: Listing) {
     [{ text: "Open listing", url: listingUrl }],
   ];
 
-  if (buyerContactUrl) {
-    rows.push([{ text: "Contact buyer", url: buyerContactUrl }]);
+  if (buyerTelegramUrl) {
+    rows.push([{ text: "Contact buyer", url: buyerTelegramUrl }]);
   }
 
-  return sendTelegramBotMessage(
+  const result = await sendTelegramBotMessage(
     listing.sellerTelegramChatId,
     [
       "Reservation confirmed.",
@@ -159,4 +175,6 @@ export async function notifySellerReservation(listing: Listing) {
       .join("\n"),
     rows,
   );
+
+  return result;
 }

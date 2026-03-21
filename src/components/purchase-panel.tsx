@@ -17,6 +17,14 @@ type PurchasePanelProps = {
   cancellationReason?: string;
 };
 
+type ReservationResponse = {
+  error?: string;
+  sellerNotification?: {
+    ok: boolean;
+    error?: string;
+  };
+};
+
 export function PurchasePanel({
   listingId,
   priceTon,
@@ -60,15 +68,31 @@ export function PurchasePanel({
     setMessage("");
 
     try {
-      await postAction(
-        `/api/listings/${listingId}/purchase`,
-        {
+      const response = await fetch(`/api/listings/${listingId}/purchase`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
           buyerName: buyerName || undefined,
           buyerContact: buyerContactInput,
           walletAddress: walletAddress || undefined,
-        },
-        "Reservation created. No TON was transferred. The seller can now accept or cancel from Telegram.",
-      );
+        }),
+      });
+
+      const body = (await response.json()) as ReservationResponse;
+      if (!response.ok) {
+        throw new Error(body.error || "Purchase failed.");
+      }
+
+      const notificationMessage = body.sellerNotification?.ok
+        ? "The seller was notified on Telegram."
+        : `Seller Telegram notification failed: ${body.sellerNotification?.error || "Unknown error."}`;
+
+      startTransition(() => {
+        setMessage(`Reservation created. No TON was transferred. ${notificationMessage}`);
+        router.refresh();
+      });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Purchase failed.");
     }
