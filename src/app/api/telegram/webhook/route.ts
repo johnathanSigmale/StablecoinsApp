@@ -29,7 +29,15 @@ type TelegramMessage = {
   chat?: {
     id: number;
     title?: string;
+    type?: string;
   };
+};
+
+type TelegramUpdate = {
+  message?: TelegramMessage;
+  edited_message?: TelegramMessage;
+  channel_post?: TelegramMessage;
+  edited_channel_post?: TelegramMessage;
 };
 
 async function sendTelegramMessage(chatId: number, text: string, listingUrl?: string) {
@@ -65,6 +73,26 @@ function buildWelcomeMessage() {
     "",
     "I will generate a listing and reply with a link you can open and share.",
   ].join("\n");
+}
+
+function extractTelegramMessage(update: TelegramUpdate) {
+  if (update.message) {
+    return { message: update.message, updateType: "message" };
+  }
+
+  if (update.edited_message) {
+    return { message: update.edited_message, updateType: "edited_message" };
+  }
+
+  if (update.channel_post) {
+    return { message: update.channel_post, updateType: "channel_post" };
+  }
+
+  if (update.edited_channel_post) {
+    return { message: update.edited_channel_post, updateType: "edited_channel_post" };
+  }
+
+  return { message: undefined, updateType: "unknown" };
 }
 
 function getBestTelegramPhoto(photos?: TelegramPhoto[]) {
@@ -140,28 +168,51 @@ async function getTelegramFileDataUrl(fileId: string) {
   };
 }
 
-async function getTelegramImageAttachment(message?: TelegramMessage) {
+function describeMessageShape(message?: TelegramMessage, updateType?: string) {
+  if (!message) {
+    return `Update type: ${updateType || "unknown"}. No supported Telegram message object was found.`;
+  }
+
+  const parts = [
+    `Update type: ${updateType || "unknown"}`,
+    `Chat type: ${message.chat?.type || "unknown"}`,
+    `Has caption: ${message.caption ? "yes" : "no"}`,
+    `Has text: ${message.text ? "yes" : "no"}`,
+    `Photo count: ${message.photo?.length || 0}`,
+    `Has document: ${message.document ? "yes" : "no"}`,
+    message.document?.mime_type ? `Document mime: ${message.document.mime_type}` : "",
+  ];
+
+  return parts.filter(Boolean).join(" | ");
+}
+
+async function getTelegramImageAttachment(message?: TelegramMessage, updateType?: string) {
   const bestPhoto = getBestTelegramPhoto(message?.photo);
   if (bestPhoto) {
-    return getTelegramFileDataUrl(bestPhoto.file_id);
+    const fileResult = await getTelegramFileDataUrl(bestPhoto.file_id);
+    return {
+      ...fileResult,
+      status: `${fileResult.status} ${describeMessageShape(message, updateType)}`.trim(),
+    };
   }
 
   if (isImageDocument(message?.document)) {
-    return getTelegramFileDataUrl(message!.document!.file_id);
+    const fileResult = await getTelegramFileDataUrl(message!.document!.file_id);
+    return {
+      ...fileResult,
+      status: `${fileResult.status} ${describeMessageShape(message, updateType)}`.trim(),
+    };
   }
 
   return {
     dataUrl: null,
-    status: "No Telegram image attachment was detected in the message.",
+    status: `No Telegram image attachment was detected. ${describeMessageShape(message, updateType)}`,
   };
 }
 
 export async function POST(request: Request) {
-  const payload = (await request.json()) as {
-    message?: TelegramMessage;
-  };
-
-  const message = payload.message;
+  const payload = (await request.json()) as TelegramUpdate;
+  const { message, updateType } = extractTelegramMessage(payload);
   const chatId = message?.chat?.id;
   const prompt = (message?.caption || message?.text || "").trim();
 
@@ -169,7 +220,7 @@ export async function POST(request: Request) {
     const lockKey = `msg_lock:${message.chat?.id || "unknown"}:${message.message_id}`;
     const acquired = await acquireRedisLock(lockKey, 60);
     if (!acquired) {
-      return NextResponse.json({ ok: true, duplicated: true });
+      return NextResponse.json({ ok: true, duplicated: true, updateType });
     }
   }
 
@@ -177,25 +228,25 @@ export async function POST(request: Request) {
     if (chatId) {
       await sendTelegramMessage(chatId, "Send a text description of the item you want to sell, or add a caption to the photo.");
     }
-    return NextResponse.json({ ok: true, ignored: true });
+    return NextResponse.json({ ok: true, ignored: true, updateType });
   }
 
   if (prompt === "/start") {
     if (chatId) {
       await sendTelegramMessage(chatId, buildWelcomeMessage());
     }
-    return NextResponse.json({ ok: true, started: true });
+    return NextResponse.json({ ok: true, started: true, updateType });
   }
 
   if (prompt.startsWith("/")) {
     if (chatId) {
       await sendTelegramMessage(chatId, "Unsupported command. Send a normal message that describes the item.");
     }
-    return NextResponse.json({ ok: true, ignored: true, command: prompt });
+    return NextResponse.json({ ok: true, ignored: true, command: prompt, updateType });
   }
 
   try {
-    const attachment = await getTelegramImageAttachment(message);
+    const attachment = await getTelegramImageAttachment(message, updateType);
 
     const listing = await createListing({
       sellerPrompt: prompt,
@@ -235,6 +286,7 @@ export async function POST(request: Request) {
       nextStep: listingUrl,
       generation: listing.generation,
       attachmentStatus: attachment.status,
+      updateType,
     });
   } catch (error) {
     console.error("Telegram listing creation failed:", error);
@@ -246,6 +298,6 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ ok: false, error: "Listing creation failed." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Listing creation failed.", updateType }, { status: 500 });
   }
 }
