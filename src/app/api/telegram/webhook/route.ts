@@ -9,7 +9,8 @@ type TelegramMessage = {
   from?: {
     username?: string;
   };
-  chat?: {
+  chat: {
+    id: number;
     title?: string;
   };
 };
@@ -32,9 +33,34 @@ export async function POST(request: Request) {
     city: message?.chat?.title || "Telegram community",
   });
 
+  // Envoi de la réponse au bot Telegram
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const listingUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/listings/${listing.id}`;
+  
+  if (botToken && payload.message?.chat.id) {
+    try {
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: payload.message.chat.id,
+          text: `✅ Annonce créée avec succès !\n\n📦 *${listing.title}*\n💰 Prix: ${listing.priceTon} TON\n\nTu peux la voir et la partager ici :\n${listingUrl}`,
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "💎 Voir l'annonce", url: listingUrl }]
+            ]
+          }
+        }),
+      });
+    } catch (error) {
+      console.error("Failed to send Telegram message:", error);
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     listingId: listing.id,
-    nextStep: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/listings/${listing.id}`,
+    nextStep: listingUrl,
   });
 }

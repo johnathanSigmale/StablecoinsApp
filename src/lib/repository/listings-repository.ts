@@ -3,7 +3,9 @@ import path from "path";
 
 import type { Listing } from "@/lib/types";
 
-const dataPath = path.join(process.cwd(), "data", "listings.json");
+const dataPath = process.env.NODE_ENV === "production" 
+  ? path.join("/tmp", "listings.json")
+  : path.join(process.cwd(), "data", "listings.json");
 
 async function ensureStore() {
   try {
