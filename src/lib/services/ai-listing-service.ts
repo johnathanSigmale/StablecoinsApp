@@ -9,6 +9,18 @@ type GeminiPart = {
   };
 };
 
+type GeminiResponsePart = {
+  text?: string;
+  inline_data?: {
+    mime_type?: string;
+    data?: string;
+  };
+  inlineData?: {
+    mimeType?: string;
+    data?: string;
+  };
+};
+
 function inlinePartFromDataUrl(dataUrl: string): GeminiPart | null {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) {
@@ -98,7 +110,7 @@ function inferPrice(prompt: string, desiredPriceTon?: number) {
     return 220;
   }
 
-  if (normalized.match(/quest|vr/)) {
+  if (normalized.match(/quest|vr|ps5|playstation/)) {
     return 150;
   }
 
@@ -228,6 +240,8 @@ async function geminiDraft(input: ListingDraftInput) {
   );
 
   if (!response.ok) {
+    const body = await response.text();
+    console.error("Gemini text generation failed:", body);
     return null;
   }
 
@@ -256,6 +270,80 @@ async function geminiDraft(input: ListingDraftInput) {
   } catch {
     return null;
   }
+}
+
+function extractInlineImagePart(parts: GeminiResponsePart[]) {
+  for (const part of parts) {
+    const snakeInline = part.inline_data;
+    const camelInline = part.inlineData;
+    const mimeType = snakeInline?.mime_type || camelInline?.mimeType;
+    const data = snakeInline?.data || camelInline?.data;
+
+    if (mimeType?.startsWith("image/") && data) {
+      return `data:${mimeType};base64,${data}`;
+    }
+  }
+
+  return null;
+}
+
+export async function generateListingHeroImage(input: ListingDraftInput, draft: ListingDraft) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return input.imageUrl || null;
+  }
+
+  const prompt = [
+    `Create a clean marketplace hero image for this product: ${draft.title}.`,
+    `Category: ${draft.category}.`,
+    `Condition: ${draft.condition}.`,
+    "Style: photorealistic ecommerce product shot, centered subject, neutral dark background, studio lighting, premium but realistic, no text, no watermark, no collage.",
+    input.imageUrl ? "Use the reference image to preserve the exact product identity while improving presentation." : "Generate the product image from the listing description alone.",
+    `Seller description: ${input.sellerPrompt}`,
+  ].join("\n");
+
+  const parts: GeminiPart[] = [{ text: prompt }];
+  if (input.imageUrl) {
+    const imagePart = await fetchImageAsInlinePart(input.imageUrl);
+    if (imagePart) {
+      parts.push(imagePart);
+    }
+  }
+
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts,
+          },
+        ],
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("Gemini image generation failed:", body);
+    return input.imageUrl || null;
+  }
+
+  const payload = (await response.json()) as {
+    candidates?: Array<{
+      content?: {
+        parts?: GeminiResponsePart[];
+      };
+    }>;
+  };
+
+  const generatedImage = extractInlineImagePart(payload.candidates?.[0]?.content?.parts || []);
+  return generatedImage || input.imageUrl || null;
 }
 
 export async function generateListingDraft(input: ListingDraftInput) {
