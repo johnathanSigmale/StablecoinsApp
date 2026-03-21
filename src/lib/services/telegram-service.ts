@@ -1,10 +1,17 @@
 import { appConfig } from "@/lib/config";
 import type { Listing } from "@/lib/types";
 
-type TelegramButton = {
+type TelegramUrlButton = {
   text: string;
   url: string;
 };
+
+type TelegramCallbackButton = {
+  text: string;
+  callback_data: string;
+};
+
+type TelegramInlineButton = TelegramUrlButton | TelegramCallbackButton;
 
 function normalizeTelegramHandle(handle?: string | null) {
   const normalized = handle?.trim();
@@ -15,13 +22,38 @@ function normalizeTelegramHandle(handle?: string | null) {
   return normalized.startsWith("@") ? normalized.slice(1) : normalized;
 }
 
+function normalizePhoneNumber(contact?: string | null) {
+  const normalized = contact?.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const digits = normalized.replace(/[^\d+]/g, "");
+  return digits.length >= 7 ? digits : null;
+}
+
 export function buildListingUrl(listing: Listing) {
   return `${appConfig.appUrl}/listings/${listing.id}`;
 }
 
 export function buildTelegramUserUrl(handle?: string | null) {
   const normalizedHandle = normalizeTelegramHandle(handle);
-  return normalizedHandle ? `https://t.me/${normalizedHandle}` : null;
+  if (!normalizedHandle) {
+    return null;
+  }
+
+  if (/^[A-Za-z0-9_]{5,}$/.test(normalizedHandle)) {
+    return `https://t.me/${normalizedHandle}`;
+  }
+
+  return null;
+}
+
+export function buildContactUrl(contact?: string | null) {
+  return buildTelegramUserUrl(contact) || (() => {
+    const phone = normalizePhoneNumber(contact);
+    return phone ? `tel:${phone}` : null;
+  })();
 }
 
 export function buildTelegramShareText(listing: Listing) {
@@ -45,7 +77,7 @@ export function buildTelegramShareUrl(listing: Listing) {
   return `https://t.me/share/url?url=${encodeURIComponent(listingUrl)}&text=${encodeURIComponent(shareText)}`;
 }
 
-export async function sendTelegramBotMessage(chatId: number, text: string, buttons?: TelegramButton[]) {
+export async function sendTelegramBotMessage(chatId: number, text: string, rows?: TelegramInlineButton[][]) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
     return false;
@@ -59,11 +91,32 @@ export async function sendTelegramBotMessage(chatId: number, text: string, butto
     body: JSON.stringify({
       chat_id: chatId,
       text,
-      reply_markup: buttons?.length
+      reply_markup: rows?.length
         ? {
-            inline_keyboard: [buttons.map((button) => ({ text: button.text, url: button.url }))],
+            inline_keyboard: rows,
           }
         : undefined,
+    }),
+  });
+
+  return response.ok;
+}
+
+export async function answerTelegramCallbackQuery(callbackQueryId: string, text: string) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) {
+    return false;
+  }
+
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      callback_query_id: callbackQueryId,
+      text,
+      show_alert: false,
     }),
   });
 
@@ -76,11 +129,17 @@ export async function notifySellerReservation(listing: Listing) {
   }
 
   const listingUrl = buildListingUrl(listing);
-  const buyerTelegramUrl = buildTelegramUserUrl(listing.escrow.buyer);
-  const buttons: TelegramButton[] = [{ text: "Open listing", url: listingUrl }];
+  const buyerContactUrl = buildContactUrl(listing.escrow.buyerContact || listing.escrow.buyer);
+  const rows: TelegramInlineButton[][] = [
+    [
+      { text: "Accept meetup", callback_data: `seller_accept:${listing.id}` },
+      { text: "Cancel reservation", callback_data: `seller_cancel:${listing.id}` },
+    ],
+    [{ text: "Open listing", url: listingUrl }],
+  ];
 
-  if (buyerTelegramUrl) {
-    buttons.push({ text: "Contact buyer", url: buyerTelegramUrl });
+  if (buyerContactUrl) {
+    rows.push([{ text: "Contact buyer", url: buyerContactUrl }]);
   }
 
   return sendTelegramBotMessage(
@@ -90,11 +149,14 @@ export async function notifySellerReservation(listing: Listing) {
       "",
       `Listing: ${listing.title}`,
       `Buyer: ${listing.escrow.buyer || "Unknown buyer"}`,
+      listing.escrow.buyerContact ? `Buyer contact: ${listing.escrow.buyerContact}` : "",
       `Status: ${listing.escrow.status}`,
       `Release code: ${listing.escrow.releaseCode || "Pending"}`,
       "",
-      "Next step: discuss the meetup place, date, and item details on Telegram.",
-    ].join("\n"),
-    buttons,
+      "Use the buttons below to accept or cancel directly from Telegram.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    rows,
   );
 }

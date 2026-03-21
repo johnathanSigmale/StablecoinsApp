@@ -17,6 +17,7 @@ export type ListingGeneration = {
 export type ListingEscrow = {
   status: EscrowStatus;
   buyer: string | null;
+  buyerContact?: string;
   buyerWalletAddress?: string;
   releaseCode?: string;
   transactionRef?: string;
@@ -56,7 +57,8 @@ export type ListingDraftInput = {
 };
 
 export type PurchaseIntent = {
-  buyerHandle: string;
+  buyerName?: string;
+  buyerContact: string;
   walletAddress?: string;
 };
 

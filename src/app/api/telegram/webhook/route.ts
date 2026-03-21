@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { acquireRedisLock, hasRedisStore } from "@/lib/server/redis-store";
-import { createListing } from "@/lib/services/listings-service";
+import { acceptMeetup, cancelListingEscrow, createListing, findListing } from "@/lib/services/listings-service";
+import { answerTelegramCallbackQuery, buildContactUrl, buildListingUrl, sendTelegramBotMessage } from "@/lib/services/telegram-service";
 
 type TelegramPhoto = {
   file_id: string;
@@ -33,34 +34,25 @@ type TelegramMessage = {
   };
 };
 
+type TelegramCallbackQuery = {
+  id: string;
+  data?: string;
+  message?: TelegramMessage;
+  from?: {
+    username?: string;
+  };
+};
+
 type TelegramUpdate = {
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
   channel_post?: TelegramMessage;
   edited_channel_post?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
 };
 
 async function sendTelegramMessage(chatId: number, text: string, listingUrl?: string) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  if (!botToken) {
-    return;
-  }
-
-  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      reply_markup: listingUrl
-        ? {
-            inline_keyboard: [[{ text: "Open listing", url: listingUrl }]],
-          }
-        : undefined,
-    }),
-  });
+  await sendTelegramBotMessage(chatId, text, listingUrl ? [[{ text: "Open listing", url: listingUrl }]] : undefined);
 }
 
 function buildWelcomeMessage() {
@@ -210,8 +202,79 @@ async function getTelegramImageAttachment(message?: TelegramMessage, updateType?
   };
 }
 
+async function handleSellerCallback(callbackQuery: TelegramCallbackQuery) {
+  const data = callbackQuery.data || "";
+  const [action, listingId] = data.split(":");
+  const chatId = callbackQuery.message?.chat?.id;
+
+  if (!chatId || !listingId || !["seller_accept", "seller_cancel"].includes(action)) {
+    await answerTelegramCallbackQuery(callbackQuery.id, "Unsupported seller action.");
+    return NextResponse.json({ ok: true, ignored: true });
+  }
+
+  const listing = await findListing(listingId);
+  if (!listing || listing.sellerTelegramChatId !== chatId) {
+    await answerTelegramCallbackQuery(callbackQuery.id, "This action is not available for this chat.");
+    return NextResponse.json({ ok: true, ignored: true });
+  }
+
+  try {
+    const updatedListing =
+      action === "seller_accept"
+        ? await acceptMeetup(listingId)
+        : await cancelListingEscrow(listingId, "Seller declined the meetup from Telegram.");
+
+    if (!updatedListing) {
+      await answerTelegramCallbackQuery(callbackQuery.id, "Listing not found.");
+      return NextResponse.json({ ok: true, ignored: true });
+    }
+
+    const buyerContactUrl = buildContactUrl(updatedListing.escrow.buyerContact || updatedListing.escrow.buyer);
+    await sendTelegramBotMessage(
+      chatId,
+      action === "seller_accept"
+        ? [
+            "Meetup accepted.",
+            "",
+            `Listing: ${updatedListing.title}`,
+            `Buyer: ${updatedListing.escrow.buyer || "Unknown buyer"}`,
+            updatedListing.escrow.buyerContact ? `Buyer contact: ${updatedListing.escrow.buyerContact}` : "",
+            `Release code: ${updatedListing.escrow.releaseCode || "Pending"}`,
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : [
+            "Reservation cancelled.",
+            "",
+            `Listing: ${updatedListing.title}`,
+            `Reason: ${updatedListing.escrow.cancellationReason || "Seller cancelled from Telegram."}`,
+          ].join("\n"),
+      [
+        [{ text: "Open listing", url: buildListingUrl(updatedListing) }],
+        ...(buyerContactUrl ? [[{ text: "Contact buyer", url: buyerContactUrl }]] : []),
+      ],
+    );
+
+    await answerTelegramCallbackQuery(
+      callbackQuery.id,
+      action === "seller_accept" ? "Meetup accepted." : "Reservation cancelled.",
+    );
+
+    return NextResponse.json({ ok: true, action, listingId });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Seller action failed.";
+    await answerTelegramCallbackQuery(callbackQuery.id, message);
+    return NextResponse.json({ ok: true, error: message });
+  }
+}
+
 export async function POST(request: Request) {
   const payload = (await request.json()) as TelegramUpdate;
+
+  if (payload.callback_query) {
+    return handleSellerCallback(payload.callback_query);
+  }
+
   const { message, updateType } = extractTelegramMessage(payload);
   const chatId = message?.chat?.id;
   const prompt = (message?.caption || message?.text || "").trim();

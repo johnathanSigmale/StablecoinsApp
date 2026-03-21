@@ -13,6 +13,7 @@ type PurchasePanelProps = {
   escrowStatus: string;
   releaseCode?: string;
   buyer?: string | null;
+  buyerContact?: string;
   cancellationReason?: string;
 };
 
@@ -23,11 +24,13 @@ export function PurchasePanel({
   escrowStatus,
   releaseCode,
   buyer,
+  buyerContact,
   cancellationReason,
 }: PurchasePanelProps) {
   const router = useRouter();
   const walletAddress = useTonAddress();
-  const [buyerHandle, setBuyerHandle] = useState("@buyer");
+  const [buyerName, setBuyerName] = useState("");
+  const [buyerContactInput, setBuyerContactInput] = useState("@buyer");
   const [manualCode, setManualCode] = useState("");
   const [cancelReason, setCancelReason] = useState("Item not as described or seller did not show up.");
   const [message, setMessage] = useState("");
@@ -60,27 +63,14 @@ export function PurchasePanel({
       await postAction(
         `/api/listings/${listingId}/purchase`,
         {
-          buyerHandle,
+          buyerName: buyerName || undefined,
+          buyerContact: buyerContactInput,
           walletAddress: walletAddress || undefined,
         },
-        "Reservation created. No TON was transferred. The seller is notified on Telegram when the listing was created via the bot.",
+        "Reservation created. No TON was transferred. The seller can now accept or cancel from Telegram.",
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Purchase failed.");
-    }
-  }
-
-  async function acceptMeetup() {
-    setMessage("");
-
-    try {
-      await postAction(
-        `/api/listings/${listingId}/seller-accept`,
-        {},
-        "Seller accepted the meetup. The buyer can inspect the item in person and then release or cancel.",
-      );
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Seller acceptance failed.");
     }
   }
 
@@ -139,14 +129,23 @@ export function PurchasePanel({
       {buyer ? (
         <p className="mutedText">
           Buyer attached to this escrow: <strong>{buyer}</strong>
+          {buyerContact ? ` (${buyerContact})` : ""}
         </p>
       ) : null}
 
       {status === "active" ? (
         <>
           <label>
-            Buyer handle
-            <input value={buyerHandle} onChange={(event) => setBuyerHandle(event.target.value)} />
+            Buyer name
+            <input value={buyerName} onChange={(event) => setBuyerName(event.target.value)} placeholder="Optional" />
+          </label>
+          <label>
+            Telegram username or phone
+            <input
+              value={buyerContactInput}
+              onChange={(event) => setBuyerContactInput(event.target.value)}
+              placeholder="@username or +212..."
+            />
           </label>
           <button className="primaryButton" disabled={isPending} onClick={() => void purchaseListing()}>
             Reserve item without TON transfer
@@ -161,17 +160,15 @@ export function PurchasePanel({
             <strong>{releaseCode || "Pending"}</strong>
           </div>
           <p className="mutedText">
-            The buyer reserved the item. The seller should confirm the meetup details on Telegram and then accept the meetup.
+            The item is reserved. The seller must accept or cancel directly in Telegram. The buyer can still cancel from here if
+            the meetup falls through.
           </p>
-          <button className="primaryButton" disabled={isPending} onClick={() => void acceptMeetup()}>
-            Seller accepts meetup
-          </button>
           <label>
             Cancellation reason
             <input value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} />
           </label>
           <button className="secondaryButton" disabled={isPending} onClick={() => void cancelEscrow()}>
-            Cancel if seller is unavailable
+            Buyer cancels reservation
           </button>
         </>
       ) : null}
@@ -183,8 +180,8 @@ export function PurchasePanel({
             <strong>{releaseCode || "Pending"}</strong>
           </div>
           <p className="mutedText">
-            The seller accepted the meetup. The buyer now inspects the item in real life and decides whether to release
-            or cancel.
+            The seller accepted the meetup in Telegram. The buyer now inspects the item in real life and decides whether to
+            release or cancel.
           </p>
           <label>
             Confirm release code

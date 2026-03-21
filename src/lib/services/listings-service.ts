@@ -1,6 +1,5 @@
 import {
   createListingId,
-  generateListingDraft,
   generateListingDraftResult,
   generateListingHeroImageResult,
 } from "@/lib/services/ai-listing-service";
@@ -83,12 +82,14 @@ export async function reserveListing(id: string, purchaseIntent: PurchaseIntent)
   }
 
   const nextTimestamp = nowIso();
+  const buyerIdentity = purchaseIntent.buyerName?.trim() || purchaseIntent.buyerContact.trim();
 
   listing.status = "reserved";
   listing.escrow = {
     ...listing.escrow,
     status: "funds_locked",
-    buyer: purchaseIntent.buyerHandle,
+    buyer: buyerIdentity,
+    buyerContact: purchaseIntent.buyerContact.trim(),
     buyerWalletAddress: purchaseIntent.walletAddress,
     releaseCode: Math.random().toString(36).slice(2, 8).toUpperCase(),
     transactionRef: purchaseIntent.walletAddress || "demo-simulation",

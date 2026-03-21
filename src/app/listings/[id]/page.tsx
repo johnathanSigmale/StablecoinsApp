@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { PurchasePanel } from "@/components/purchase-panel";
 import { findListing } from "@/lib/services/listings-service";
 import {
+  buildContactUrl,
   buildTelegramShareText,
   buildTelegramShareUrl,
   buildTelegramUserUrl,
@@ -26,7 +27,7 @@ function describeEscrowStep(status: string) {
     case "funds_locked":
       return {
         title: "Reservation received",
-        description: "A buyer reserved the item. The seller should confirm meetup details on Telegram before accepting.",
+        description: "A buyer reserved the item. The seller must accept or cancel directly from Telegram.",
       };
     case "seller_accepted":
       return {
@@ -41,7 +42,7 @@ function describeEscrowStep(status: string) {
     case "cancelled":
       return {
         title: "Meetup cancelled",
-        description: "The buyer did not approve the handoff, so the escrow remained unreleased.",
+        description: "The buyer or seller cancelled the meetup, so the escrow remained unreleased.",
       };
     default:
       return {
@@ -62,7 +63,7 @@ export default async function ListingPage({ params }: ListingPageProps) {
   const shareText = buildTelegramShareText(listing);
   const telegramShareUrl = buildTelegramShareUrl(listing);
   const sellerTelegramUrl = buildTelegramUserUrl(listing.sellerHandle);
-  const buyerTelegramUrl = buildTelegramUserUrl(listing.escrow.buyer);
+  const buyerContactUrl = buildContactUrl(listing.escrow.buyerContact || listing.escrow.buyer);
   const escrowStep = describeEscrowStep(listing.escrow.status);
 
   return (
@@ -107,6 +108,7 @@ export default async function ListingPage({ params }: ListingPageProps) {
           escrowStatus={listing.escrow.status}
           releaseCode={listing.escrow.releaseCode}
           buyer={listing.escrow.buyer}
+          buyerContact={listing.escrow.buyerContact}
           cancellationReason={listing.escrow.cancellationReason}
         />
       </section>
@@ -128,9 +130,9 @@ export default async function ListingPage({ params }: ListingPageProps) {
               Contact seller on Telegram
             </a>
           ) : null}
-          {buyerTelegramUrl ? (
-            <a className="secondaryButton" href={buyerTelegramUrl} target="_blank" rel="noreferrer">
-              Contact buyer on Telegram
+          {buyerContactUrl ? (
+            <a className="secondaryButton" href={buyerContactUrl} target="_blank" rel="noreferrer">
+              Contact buyer
             </a>
           ) : null}
         </article>

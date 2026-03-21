@@ -12,17 +12,19 @@ type RouteContext = {
 export async function POST(request: Request, context: RouteContext) {
   const { id } = await context.params;
   const body = (await request.json()) as {
-    buyerHandle?: string;
+    buyerName?: string;
+    buyerContact?: string;
     walletAddress?: string;
   };
 
-  if (!body.buyerHandle) {
-    return NextResponse.json({ error: "buyerHandle is required." }, { status: 400 });
+  if (!body.buyerContact) {
+    return NextResponse.json({ error: "buyerContact is required." }, { status: 400 });
   }
 
   try {
     const listing = await reserveListing(id, {
-      buyerHandle: body.buyerHandle,
+      buyerName: body.buyerName,
+      buyerContact: body.buyerContact,
       walletAddress: body.walletAddress,
     });
 
