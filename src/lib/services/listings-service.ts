@@ -175,12 +175,19 @@ export async function cancelListingEscrow(id: string, reason?: string) {
   }
 
   const nextTimestamp = nowIso();
-  listing.status = "cancelled";
+  listing.status = "active";
   listing.escrow = {
-    ...listing.escrow,
-    status: "cancelled",
+    status: "draft",
+    buyer: null,
+    buyerContact: undefined,
+    buyerWalletAddress: undefined,
+    releaseCode: undefined,
+    transactionRef: undefined,
+    fundsLockedAt: undefined,
+    sellerAcceptedAt: undefined,
+    releasedAt: undefined,
     cancelledAt: nextTimestamp,
-    cancellationReason: reason?.trim() || "Buyer rejected the item or the seller did not show up.",
+    cancellationReason: reason?.trim() || "Reservation was cancelled.",
     lastUpdatedAt: nextTimestamp,
   };
 

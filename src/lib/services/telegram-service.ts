@@ -6,12 +6,7 @@ type TelegramUrlButton = {
   url: string;
 };
 
-type TelegramCallbackButton = {
-  text: string;
-  callback_data: string;
-};
-
-type TelegramInlineButton = TelegramUrlButton | TelegramCallbackButton;
+type TelegramInlineButton = TelegramUrlButton;
 
 function normalizeTelegramHandle(handle?: string | null) {
   const normalized = handle?.trim();
@@ -75,6 +70,13 @@ export function buildTelegramShareUrl(listing: Listing) {
   const listingUrl = buildListingUrl(listing);
   const shareText = buildTelegramShareText(listing);
   return `https://t.me/share/url?url=${encodeURIComponent(listingUrl)}&text=${encodeURIComponent(shareText)}`;
+}
+
+export function buildSellerActionUrl(listing: Listing, action: "accept" | "cancel") {
+  const listingUrl = `${appConfig.appUrl}/seller-action?action=${action}&listingId=${encodeURIComponent(listing.id)}`;
+  const chatId = listing.sellerTelegramChatId;
+
+  return chatId ? `${listingUrl}&chatId=${encodeURIComponent(String(chatId))}` : listingUrl;
 }
 
 export async function sendTelegramBotMessage(chatId: number, text: string, rows?: TelegramInlineButton[][]) {
@@ -148,8 +150,8 @@ export async function notifySellerReservation(listing: Listing) {
   const buyerTelegramUrl = buildTelegramUserUrl(listing.escrow.buyerContact || listing.escrow.buyer);
   const rows: TelegramInlineButton[][] = [
     [
-      { text: "Accept meetup", callback_data: `seller_accept:${listing.id}` },
-      { text: "Cancel reservation", callback_data: `seller_cancel:${listing.id}` },
+      { text: "Accept meetup", url: buildSellerActionUrl(listing, "accept") },
+      { text: "Cancel reservation", url: buildSellerActionUrl(listing, "cancel") },
     ],
     [{ text: "Open listing", url: listingUrl }],
   ];
@@ -158,7 +160,7 @@ export async function notifySellerReservation(listing: Listing) {
     rows.push([{ text: "Contact buyer", url: buyerTelegramUrl }]);
   }
 
-  const result = await sendTelegramBotMessage(
+  return sendTelegramBotMessage(
     listing.sellerTelegramChatId,
     [
       "Reservation confirmed.",
@@ -175,6 +177,26 @@ export async function notifySellerReservation(listing: Listing) {
       .join("\n"),
     rows,
   );
+}
 
-  return result;
+export async function notifySellerBuyerCancelled(listing: Listing, reason?: string) {
+  if (!listing.sellerTelegramChatId) {
+    return { ok: false as const, error: "Listing has no sellerTelegramChatId." };
+  }
+
+  return sendTelegramBotMessage(
+    listing.sellerTelegramChatId,
+    [
+      "Reservation cancelled by buyer.",
+      "",
+      `Listing: ${listing.title}`,
+      `Buyer: ${listing.escrow.buyer || "Unknown buyer"}`,
+      reason ? `Reason: ${reason}` : "",
+      "",
+      "The listing is available again for new reservations.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    [[{ text: "Open listing", url: buildListingUrl(listing) }]],
+  );
 }
