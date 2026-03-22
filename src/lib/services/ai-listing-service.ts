@@ -303,7 +303,16 @@ async function identifyProductFromImage(apiKey: string, imageDataUrl: string, se
         contents: [{
           parts: [
             {
-              text: `Look at this product photo and identify the exact brand, model name, generation or version, color, and any visible distinguishing features. Be as specific as possible. If you cannot identify the exact model, give your best guess with the brand and product family. Seller context: ${sellerPrompt}`,
+              text: [
+                "You are a consumer electronics expert. Your only job right now is to identify the product in this photo.",
+                "Output a single line: Brand + exact model name + generation + color + storage/capacity if visible.",
+                "Example: Apple iPhone 14 Pro, Deep Purple, 256GB",
+                "Example: Sony WH-1000XM5, Black",
+                "Example: Meta Quest 3, 512GB",
+                "Be as specific as the image allows. If the exact model is ambiguous, pick the most likely one and say so briefly.",
+                "Do NOT write a description or listing — just identify the product.",
+                `Seller's own description for extra context (do not copy it verbatim): ${sellerPrompt}`,
+              ].join("\n"),
             },
             imagePart,
           ],
@@ -321,12 +330,20 @@ async function identifyProductFromImage(apiKey: string, imageDataUrl: string, se
   }
 }
 
-async function fetchWebContext(apiKey: string, query: string): Promise<string | null> {
+async function fetchPriceContext(apiKey: string, identifiedProduct: string): Promise<string | null> {
   try {
     const response = await fetchGeminiWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`,
       {
-        contents: [{ parts: [{ text: `Current second-hand market price and key specifications for: ${query}` }] }],
+        contents: [{
+          parts: [{
+            text: [
+              `Search the web for the current second-hand / used market price of: ${identifiedProduct}`,
+              "Return only price data: typical used price range in USD, recent sold listings if available, and how condition affects the price.",
+              "Do not write a product description. Price information only.",
+            ].join("\n"),
+          }],
+        }],
         tools: [{ google_search: {} }],
       },
       apiKey,
@@ -341,24 +358,27 @@ async function fetchWebContext(apiKey: string, query: string): Promise<string | 
   }
 }
 
-function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number, webContext?: string, identifiedProduct?: string): GeminiPart[] {
+function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number, priceContext?: string, identifiedProduct?: string): GeminiPart[] {
   return [
     {
       text: [
-        "You help sellers create Telegram-native second-hand electronics listings for a TON commerce assistant.",
-        "Return JSON only.",
-        "First identify the most likely brand and exact model from the seller photo and prompt.",
-        "If the exact model is uncertain, infer the most likely brand and product family instead of using a generic title.",
-        "Rewrite the description in polished marketplace language. Do not copy the seller sentence verbatim.",
-        "Use the seller photo when present to identify the product and improve the listing.",
+        "You are a marketplace listing assistant. Generate a second-hand electronics listing in JSON.",
+        identifiedProduct
+          ? `The product has already been identified: ${identifiedProduct}. Use this as the definitive brand and model — do not try to re-identify it.`
+          : "Identify the product brand and model from the seller photo and prompt.",
+        "Rewrite the seller's description in polished, concise marketplace language. Do not copy it verbatim.",
+        "Inspect the photo to assess the product's visible condition (scratches, wear, accessories present, etc.).",
         explicitPriceTon
-          ? `The seller explicitly set the price to ${explicitPriceTon} TON. Preserve that exact TON price.`
-          : "The seller did not provide a TON price. Estimate a fair current second-hand TON price based primarily on the web research context above and the product's condition. Adjust downward from the new retail price according to condition (Excellent: ~75-85%, Very Good: ~60-75%, Good: ~45-60%, Fair: ~30-45%). If the exact model is uncertain, estimate from the closest matching product family and explain that logic in pricingRationale.",
-        "Keep the tone concise, credible, and marketplace-ready.",
-        "Prefer a title that starts with the identified brand and model whenever possible.",
-        "If and only if the photo is too blurry to identify any product, OR the seller's city or location is completely absent from the prompt, set clarificationNeeded to one short, friendly question asking for that specific missing info. In all other cases leave clarificationNeeded empty.",
-        identifiedProduct ? `Product identified from image (use this as the primary source for brand and model):\n${identifiedProduct}` : "",
-        webContext ? `Web research context (use this to improve accuracy of price and specs):\n${webContext}` : "",
+          ? `The seller explicitly set the price to ${explicitPriceTon} TON. Preserve that exact value.`
+          : priceContext
+            ? [
+                "Estimate a fair second-hand TON price using the real market price data below.",
+                "Convert the USD range to TON (1 TON ≈ 5 USD). Adjust within the range based on the product's condition.",
+                "Condition discounts from the used market midpoint: Excellent 0%, Very Good −10%, Good −20%, Fair −35%.",
+                `Market price data:\n${priceContext}`,
+              ].join("\n")
+            : "Estimate a fair second-hand TON price from your training knowledge, adjusted for the product's condition.",
+        "If and only if the photo is too blurry to identify any product, OR the seller's city or location is completely absent from the prompt, set clarificationNeeded to one short friendly question. Otherwise leave clarificationNeeded empty.",
         `Seller handle: ${input.sellerHandle}`,
         `City: ${input.city}`,
         `Seller prompt: ${input.sellerPrompt}`,
@@ -414,11 +434,10 @@ async function requestGeminiDraft(apiKey: string, input: ListingDraftInput, expl
     ? await identifyProductFromImage(apiKey, input.imageUrl, input.sellerPrompt)
     : null;
 
-  // Step 2: web search using the identified product for accurate pricing
-  const searchQuery = identifiedProduct || input.sellerPrompt;
-  const webContext = await fetchWebContext(apiKey, searchQuery);
+  // Step 2: web search solely for pricing, using the identified product name
+  const priceContext = identifiedProduct ? await fetchPriceContext(apiKey, identifiedProduct) : null;
 
-  const parts = buildGeminiParts(input, explicitPriceTon, webContext ?? undefined, identifiedProduct ?? undefined);
+  const parts = buildGeminiParts(input, explicitPriceTon, priceContext ?? undefined, identifiedProduct ?? undefined);
   const imagePart = input.imageUrl ? await fetchImageAsInlinePart(input.imageUrl) : null;
   if (imagePart) {
     parts.push(imagePart);
