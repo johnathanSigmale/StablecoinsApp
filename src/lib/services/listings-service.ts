@@ -202,7 +202,6 @@ export async function cancelListingEscrow(id: string, reason?: string) {
     buyerContact: undefined,
     buyerWalletAddress: undefined,
     reservationMode: undefined,
-    releaseCode: undefined,
     transactionRef: undefined,
     balanceVerifiedAt: undefined,
     fundsLockedAt: undefined,

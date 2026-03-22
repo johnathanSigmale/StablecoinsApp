@@ -61,12 +61,6 @@ export default async function SellerActionPage({ searchParams }: SellerActionPag
               ? "The buyer can now inspect the item in person. Keep the release code private until the meetup is complete."
               : "The listing is active again and can be reserved by another buyer."}
           </p>
-          {action === "accept" && updatedListing.escrow.releaseCode ? (
-            <div className="codePanel">
-              <span>Private seller release code</span>
-              <strong>{updatedListing.escrow.releaseCode}</strong>
-            </div>
-          ) : null}
           <Link className="primaryButton" href={`/listings/${updatedListing.id}`}>
             Open listing
           </Link>

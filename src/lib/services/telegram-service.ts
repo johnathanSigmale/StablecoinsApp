@@ -174,9 +174,7 @@ export async function notifySellerReservation(listing: Listing) {
       `Reservation mode: ${listing.escrow.reservationMode || "demo"}`,
       listing.sellerWalletAddress ? `Seller wallet: ${listing.sellerWalletAddress}` : "Seller wallet: not configured",
       `Status: ${listing.escrow.status}`,
-      `Release code: ${listing.escrow.releaseCode || "Pending"}`,
       "",
-      "Keep the release code private until the in-person inspection is complete.",
       "Use the buttons below to accept or cancel directly from Telegram.",
     ]
       .filter(Boolean)
