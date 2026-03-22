@@ -292,13 +292,41 @@ async function fetchGeminiWithRetry(url: string, body: unknown, apiKey: string) 
   return lastResponse;
 }
 
-async function fetchWebContext(apiKey: string, sellerPrompt: string): Promise<string | null> {
+async function identifyProductFromImage(apiKey: string, imageDataUrl: string, sellerPrompt: string): Promise<string | null> {
   try {
-    const query = `Current second-hand market price and key specifications for: ${sellerPrompt}`;
+    const imagePart = await fetchImageAsInlinePart(imageDataUrl);
+    if (!imagePart) return null;
+
     const response = await fetchGeminiWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`,
       {
-        contents: [{ parts: [{ text: query }] }],
+        contents: [{
+          parts: [
+            {
+              text: `Look at this product photo and identify the exact brand, model name, generation or version, color, and any visible distinguishing features. Be as specific as possible. If you cannot identify the exact model, give your best guess with the brand and product family. Seller context: ${sellerPrompt}`,
+            },
+            imagePart,
+          ],
+        }],
+      },
+      apiKey,
+    );
+
+    if (!response || !response.ok) return null;
+
+    const payload = (await response.json()) as GeminiPayload;
+    return payload.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("\n").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWebContext(apiKey: string, query: string): Promise<string | null> {
+  try {
+    const response = await fetchGeminiWithRetry(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`,
+      {
+        contents: [{ parts: [{ text: `Current second-hand market price and key specifications for: ${query}` }] }],
         tools: [{ google_search: {} }],
       },
       apiKey,
@@ -313,7 +341,7 @@ async function fetchWebContext(apiKey: string, sellerPrompt: string): Promise<st
   }
 }
 
-function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number, webContext?: string): GeminiPart[] {
+function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number, webContext?: string, identifiedProduct?: string): GeminiPart[] {
   return [
     {
       text: [
@@ -329,6 +357,7 @@ function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number, w
         "Keep the tone concise, credible, and marketplace-ready.",
         "Prefer a title that starts with the identified brand and model whenever possible.",
         "If and only if the photo is too blurry to identify any product, OR the seller's city or location is completely absent from the prompt, set clarificationNeeded to one short, friendly question asking for that specific missing info. In all other cases leave clarificationNeeded empty.",
+        identifiedProduct ? `Product identified from image (use this as the primary source for brand and model):\n${identifiedProduct}` : "",
         webContext ? `Web research context (use this to improve accuracy of price and specs):\n${webContext}` : "",
         `Seller handle: ${input.sellerHandle}`,
         `City: ${input.city}`,
@@ -380,8 +409,16 @@ function normalizeGeminiDraft(input: ListingDraftInput, parsed: PartialListingDr
 }
 
 async function requestGeminiDraft(apiKey: string, input: ListingDraftInput, explicitPriceTon?: number) {
-  const webContext = await fetchWebContext(apiKey, input.sellerPrompt);
-  const parts = buildGeminiParts(input, explicitPriceTon, webContext ?? undefined); // null → undefined
+  // Step 1: unconstrained image identification (no schema, better visual reasoning)
+  const identifiedProduct = input.imageUrl
+    ? await identifyProductFromImage(apiKey, input.imageUrl, input.sellerPrompt)
+    : null;
+
+  // Step 2: web search using the identified product for accurate pricing
+  const searchQuery = identifiedProduct || input.sellerPrompt;
+  const webContext = await fetchWebContext(apiKey, searchQuery);
+
+  const parts = buildGeminiParts(input, explicitPriceTon, webContext ?? undefined, identifiedProduct ?? undefined);
   const imagePart = input.imageUrl ? await fetchImageAsInlinePart(input.imageUrl) : null;
   if (imagePart) {
     parts.push(imagePart);
