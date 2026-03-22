@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
 
+import { getSellerProfile, upsertSellerProfile } from "@/lib/repository/seller-profiles-repository";
 import { acquireRedisLock, hasRedisStore } from "@/lib/server/redis-store";
-import { acceptMeetup, cancelListingEscrow, createListing, findListing } from "@/lib/services/listings-service";
-import {
-  answerTelegramCallbackQuery,
-  buildContactUrl,
-  buildListingUrl,
-  buildTelegramShareUrl,
-  sendTelegramBotMessage,
-} from "@/lib/services/telegram-service";
+import { createListing } from "@/lib/services/listings-service";
+import { buildTelegramShareUrl, sendTelegramBotMessage } from "@/lib/services/telegram-service";
+import { isLikelyTonAddress } from "@/lib/utils";
 
 type TelegramPhoto = {
   file_id: string;
@@ -40,21 +36,11 @@ type TelegramMessage = {
   };
 };
 
-type TelegramCallbackQuery = {
-  id: string;
-  data?: string;
-  message?: TelegramMessage;
-  from?: {
-    username?: string;
-  };
-};
-
 type TelegramUpdate = {
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
   channel_post?: TelegramMessage;
   edited_channel_post?: TelegramMessage;
-  callback_query?: TelegramCallbackQuery;
 };
 
 type SendRows = Parameters<typeof sendTelegramBotMessage>[2];
@@ -67,11 +53,13 @@ function buildWelcomeMessage() {
   return [
     "Welcome to FlipBot AI.",
     "",
-    "Send one plain-language message describing the item you want to sell.",
-    "A seller photo is mandatory: send the image with the caption in the same message.",
-    "Example: Selling my Meta Quest 2 with charger, very clean, meetup in Casablanca, 150 TON.",
+    "1. Set your seller wallet first:",
+    "/wallet <your TON testnet address>",
     "",
-    "I will generate a listing and reply with a link you can open and share.",
+    "2. Then send one product photo with the caption in the same message.",
+    "Example caption: Selling my Meta Quest 2 with charger, very clean, meetup in Casablanca, 150 TON.",
+    "",
+    "I will create the listing and return a shareable Telegram link.",
   ].join("\n");
 }
 
@@ -196,93 +184,26 @@ async function getTelegramImageAttachment(message?: TelegramMessage, updateType?
     };
   }
 
-  if (isImageDocument(message?.document)) {
-    const fileResult = await getTelegramFileDataUrl(message!.document!.file_id);
+  if (message?.document && isImageDocument(message.document)) {
+    const fileResult = await getTelegramFileDataUrl(message.document.file_id);
     return {
       ...fileResult,
       status: `${fileResult.status} ${describeMessageShape(message, updateType)}`.trim(),
     };
   }
-
   return {
     dataUrl: null,
     status: `No Telegram image attachment was detected. ${describeMessageShape(message, updateType)}`,
   };
 }
 
-async function handleSellerCallback(callbackQuery: TelegramCallbackQuery) {
-  const data = callbackQuery.data || "";
-  const [action, listingId] = data.split(":");
-  const chatId = callbackQuery.message?.chat?.id;
-
-  if (!chatId || !listingId || !["seller_accept", "seller_cancel"].includes(action)) {
-    await answerTelegramCallbackQuery(callbackQuery.id, "Unsupported seller action.");
-    return NextResponse.json({ ok: true, ignored: true });
-  }
-
-  const listing = await findListing(listingId);
-  if (!listing || listing.sellerTelegramChatId !== chatId) {
-    await answerTelegramCallbackQuery(callbackQuery.id, "This action is not available for this chat.");
-    return NextResponse.json({ ok: true, ignored: true });
-  }
-
-  try {
-    const updatedListing =
-      action === "seller_accept"
-        ? await acceptMeetup(listingId)
-        : await cancelListingEscrow(listingId, "Seller declined the meetup from Telegram.");
-
-    if (!updatedListing) {
-      await answerTelegramCallbackQuery(callbackQuery.id, "Listing not found.");
-      return NextResponse.json({ ok: true, ignored: true });
-    }
-
-    const buyerContactUrl = buildContactUrl(updatedListing.escrow.buyerContact || updatedListing.escrow.buyer);
-    await sendTelegramBotMessage(
-      chatId,
-      action === "seller_accept"
-        ? [
-            "Meetup accepted.",
-            "",
-            `Listing: ${updatedListing.title}`,
-            `Buyer: ${updatedListing.escrow.buyer || "Unknown buyer"}`,
-            updatedListing.escrow.buyerContact ? `Buyer contact: ${updatedListing.escrow.buyerContact}` : "",
-            `Release code: ${updatedListing.escrow.releaseCode || "Pending"}`,
-          ]
-            .filter(Boolean)
-            .join("\n")
-        : [
-            "Reservation cancelled.",
-            "",
-            `Listing: ${updatedListing.title}`,
-            `Reason: ${updatedListing.escrow.cancellationReason || "Seller cancelled from Telegram."}`,
-          ].join("\n"),
-      [
-        [{ text: "Open listing", url: buildListingUrl(updatedListing) }],
-        ...(buyerContactUrl ? [[{ text: "Contact buyer", url: buyerContactUrl }]] : []),
-      ],
-    );
-
-    await answerTelegramCallbackQuery(
-      callbackQuery.id,
-      action === "seller_accept" ? "Meetup accepted." : "Reservation cancelled.",
-    );
-
-    return NextResponse.json({ ok: true, action, listingId });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Seller action failed.";
-    await answerTelegramCallbackQuery(callbackQuery.id, message);
-    return NextResponse.json({ ok: true, error: message });
-  }
+function extractWalletCommand(prompt: string) {
+  const match = prompt.match(/^\/wallet(?:@\w+)?\s+(.+)$/i);
+  return match?.[1]?.trim() || "";
 }
 
 export async function POST(request: Request) {
   const payload = (await request.json()) as TelegramUpdate;
-
-  if (payload.callback_query) {
-    return handleSellerCallback(payload.callback_query);
-  }
-
   const { message, updateType } = extractTelegramMessage(payload);
   const chatId = message?.chat?.id;
   const prompt = (message?.caption || message?.text || "").trim();
@@ -297,7 +218,7 @@ export async function POST(request: Request) {
 
   if (!prompt) {
     if (chatId) {
-      await sendTelegramMessage(chatId, "Send a text description of the item you want to sell, or add a caption to the photo.");
+      await sendTelegramMessage(chatId, "Send a product photo with a caption, or use /wallet first to set your seller wallet.");
     }
     return NextResponse.json({ ok: true, ignored: true, updateType });
   }
@@ -309,36 +230,107 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, started: true, updateType });
   }
 
+  if (prompt.startsWith("/wallet")) {
+    if (!chatId) {
+      return NextResponse.json({ ok: true, ignored: true, updateType });
+    }
+
+    const walletAddress = extractWalletCommand(prompt);
+    if (!walletAddress) {
+      await sendTelegramMessage(chatId, "Usage: /wallet <your TON testnet address>");
+      return NextResponse.json({ ok: true, walletRequired: true, updateType });
+    }
+
+    if (!isLikelyTonAddress(walletAddress)) {
+      await sendTelegramMessage(chatId, "This wallet address format does not look valid. Paste a TON wallet address and try again.");
+      return NextResponse.json({ ok: true, invalidWallet: true, updateType });
+    }
+
+    const sellerHandle = message?.from?.username ? `@${message.from.username}` : undefined;
+    await upsertSellerProfile({
+      chatId,
+      sellerHandle,
+      walletAddress,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await sendTelegramMessage(
+      chatId,
+      [
+        "Seller wallet saved.",
+        `Wallet: ${walletAddress}`,
+        "",
+        "Next step: send a product photo with the caption in the same message to create a listing.",
+      ].join("\n"),
+    );
+
+    return NextResponse.json({ ok: true, walletSaved: true, updateType });
+  }
+
+  if (prompt.startsWith("/profile")) {
+    if (!chatId) {
+      return NextResponse.json({ ok: true, ignored: true, updateType });
+    }
+
+    const profile = await getSellerProfile(chatId);
+    await sendTelegramMessage(
+      chatId,
+      profile
+        ? [
+            "Seller profile",
+            `Wallet: ${profile.walletAddress}`,
+            `Handle: ${profile.sellerHandle || "not set"}`,
+            "",
+            "Send a product photo with caption to create a listing.",
+          ].join("\n")
+        : "No seller wallet is saved for this chat yet. Use /wallet <your TON testnet address> first.",
+    );
+
+    return NextResponse.json({ ok: true, profileShown: true, updateType });
+  }
+
   if (prompt.startsWith("/")) {
     if (chatId) {
-      await sendTelegramMessage(chatId, "Unsupported command. Send a normal message that describes the item.");
+      await sendTelegramMessage(chatId, "Unsupported command. Use /wallet, /profile, or send a product photo with caption.");
     }
     return NextResponse.json({ ok: true, ignored: true, command: prompt, updateType });
   }
 
   try {
+    if (!chatId) {
+      return NextResponse.json({ ok: false, error: "Telegram chat id is required." }, { status: 400 });
+    }
+
+    const sellerProfile = await getSellerProfile(chatId);
+    if (!sellerProfile?.walletAddress) {
+      await sendTelegramMessage(
+        chatId,
+        "Set your seller wallet first with /wallet <your TON testnet address>, then send the product photo again.",
+      );
+      return NextResponse.json({ ok: true, walletRequired: true, updateType });
+    }
+
     const attachment = await getTelegramImageAttachment(message, updateType);
 
     if (!attachment.dataUrl) {
-      if (chatId) {
-        await sendTelegramMessage(
-          chatId,
-          [
-            "A seller image is required before I can create the listing.",
-            "Send one product photo with the caption in the same message, or use the mini app and paste an image URL.",
-            "",
-            `Attachment status: ${attachment.status}`,
-          ].join("\n"),
-        );
-      }
+      await sendTelegramMessage(
+        chatId,
+        [
+          "A seller image is required before I can create the listing.",
+          "Send one product photo with the caption in the same message.",
+          "",
+          `Attachment status: ${attachment.status}`,
+        ].join("\n"),
+      );
 
       return NextResponse.json({ ok: true, imageRequired: true, attachmentStatus: attachment.status, updateType });
     }
 
     const listing = await createListing({
       sellerPrompt: prompt,
-      sellerHandle: message?.from?.username ? `@${message.from.username}` : "@telegram_seller",
-      sellerChatId: message?.chat?.id,
+      sellerHandle: message?.from?.username ? `@${message.from.username}` : sellerProfile.sellerHandle || "@telegram_seller",
+      sellerChatId: chatId,
+      sellerWalletAddress: sellerProfile.walletAddress,
       city: message?.chat?.title || "Telegram community",
       imageUrl: attachment.dataUrl,
     });
@@ -346,33 +338,32 @@ export async function POST(request: Request) {
     const listingUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/listings/${listing.id}`;
     const shareUrl = buildTelegramShareUrl(listing);
 
-    if (chatId) {
-      await sendTelegramMessage(
-        chatId,
+    await sendTelegramMessage(
+      chatId,
+      [
+        "Listing created successfully.",
+        "",
+        `Item: ${listing.title}`,
+        `Price: ${listing.priceTon} TON`,
+        `Seller wallet: ${listing.sellerWalletAddress || "not set"}`,
+        `Text source: ${listing.generation?.textSource || "unknown"}`,
+        `Image source: ${listing.generation?.imageSource || "unknown"}`,
+        `Attachment status: ${attachment.status}`,
+        listing.generation?.textStatusMessage ? `Text status: ${listing.generation.textStatusMessage}` : "",
+        listing.generation?.imageStatusMessage ? `Image status: ${listing.generation.imageStatusMessage}` : "",
+        "",
+        "Open and share this listing:",
+        listingUrl,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      [
         [
-          "Listing created successfully.",
-          "",
-          `Item: ${listing.title}`,
-          `Price: ${listing.priceTon} TON`,
-          `Text source: ${listing.generation?.textSource || "unknown"}`,
-          `Image source: ${listing.generation?.imageSource || "unknown"}`,
-          `Attachment status: ${attachment.status}`,
-          listing.generation?.textStatusMessage ? `Text status: ${listing.generation.textStatusMessage}` : "",
-          listing.generation?.imageStatusMessage ? `Image status: ${listing.generation.imageStatusMessage}` : "",
-          "",
-          "Open and share this listing:",
-          listingUrl,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        [
-          [
-            { text: "Open listing", url: listingUrl },
-            { text: "Share in Telegram", url: shareUrl },
-          ],
+          { text: "Open listing", url: listingUrl },
+          { text: "Share in Telegram", url: shareUrl },
         ],
-      );
-    }
+      ],
+    );
 
     return NextResponse.json({
       ok: true,
@@ -388,10 +379,12 @@ export async function POST(request: Request) {
     if (chatId) {
       await sendTelegramMessage(
         chatId,
-        "I could not create the listing. Check NEXT_PUBLIC_APP_URL, GEMINI_API_KEY, storage configuration, and deployment logs, then try again.",
+        "I could not create the listing. Check NEXT_PUBLIC_APP_URL, GEMINI_API_KEY, storage configuration, seller wallet setup, and deployment logs, then try again.",
       );
     }
 
     return NextResponse.json({ ok: false, error: "Listing creation failed.", updateType }, { status: 500 });
   }
 }
+
+

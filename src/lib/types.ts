@@ -1,5 +1,12 @@
 export type ListingStatus = "active" | "reserved" | "meetup" | "sold" | "cancelled";
-export type EscrowStatus = "draft" | "funds_locked" | "seller_accepted" | "released" | "cancelled";
+export type EscrowStatus =
+  | "draft"
+  | "reserved_pending_seller"
+  | "seller_accepted"
+  | "released"
+  | "cancelled"
+  | "funds_locked";
+export type ReservationMode = "demo" | "balance_check";
 
 export type ListingAiInsights = {
   suggestedTitle: string;
@@ -19,8 +26,10 @@ export type ListingEscrow = {
   buyer: string | null;
   buyerContact?: string;
   buyerWalletAddress?: string;
+  reservationMode?: ReservationMode;
   releaseCode?: string;
   transactionRef?: string;
+  balanceVerifiedAt?: string;
   fundsLockedAt?: string;
   sellerAcceptedAt?: string;
   releasedAt?: string;
@@ -38,6 +47,7 @@ export type Listing = {
   priceTon: number;
   sellerHandle: string;
   sellerTelegramChatId?: number;
+  sellerWalletAddress?: string;
   city: string;
   imageUrl: string;
   createdAt: string;
@@ -52,6 +62,7 @@ export type ListingDraftInput = {
   imageUrl?: string;
   sellerHandle: string;
   sellerChatId?: number;
+  sellerWalletAddress?: string;
   city: string;
   desiredPriceTon?: number;
 };
@@ -60,6 +71,7 @@ export type PurchaseIntent = {
   buyerName?: string;
   buyerContact: string;
   walletAddress?: string;
+  reservationMode: ReservationMode;
 };
 
 export type ListingDraft = {

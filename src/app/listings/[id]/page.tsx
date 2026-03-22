@@ -19,11 +19,7 @@ type ListingPageProps = {
 
 function describeEscrowStep(status: string) {
   switch (status) {
-    case "draft":
-      return {
-        title: "Waiting for a buyer",
-        description: "The seller posted the listing and is waiting for someone to reserve it.",
-      };
+    case "reserved_pending_seller":
     case "funds_locked":
       return {
         title: "Reservation received",
@@ -32,22 +28,22 @@ function describeEscrowStep(status: string) {
     case "seller_accepted":
       return {
         title: "Meetup accepted",
-        description: "The seller accepted the meetup. The buyer inspects the item in person before releasing funds.",
+        description: "The seller accepted the meetup. The buyer inspects the item in person and enters the private code to release payment.",
       };
     case "released":
       return {
-        title: "Funds released",
-        description: "The buyer confirmed the item after inspection, so the seller received payment.",
+        title: "Payment released",
+        description: "The buyer validated the product in person and finalized payment to the seller.",
       };
     case "cancelled":
       return {
         title: "Meetup cancelled",
-        description: "The buyer or seller cancelled the meetup, so the escrow remained unreleased.",
+        description: "The meetup was cancelled. The listing is open again for a new reservation.",
       };
     default:
       return {
-        title: "Escrow draft",
-        description: "The listing exists, but no buyer has reserved it yet.",
+        title: "Waiting for a buyer",
+        description: "The seller posted the listing and is waiting for someone to reserve it.",
       };
   }
 }
@@ -106,9 +102,11 @@ export default async function ListingPage({ params }: ListingPageProps) {
           priceTon={listing.priceTon}
           status={listing.status}
           escrowStatus={listing.escrow.status}
-          releaseCode={listing.escrow.releaseCode}
+          reservationMode={listing.escrow.reservationMode}
           buyer={listing.escrow.buyer}
           buyerContact={listing.escrow.buyerContact}
+          buyerWalletAddress={listing.escrow.buyerWalletAddress}
+          sellerWalletAddress={listing.sellerWalletAddress}
           cancellationReason={listing.escrow.cancellationReason}
         />
       </section>

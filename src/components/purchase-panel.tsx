@@ -2,18 +2,22 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { TonConnectButton, useTonAddress } from "@tonconnect/ui-react";
+import { TonConnectButton, useTonAddress, useTonConnectUI } from "@tonconnect/ui-react";
 
-import { formatTon } from "@/lib/utils";
+import { appConfig } from "@/lib/config";
+import type { ReservationMode } from "@/lib/types";
+import { formatTon, labelEscrowStatus, toNanoString } from "@/lib/utils";
 
 type PurchasePanelProps = {
   listingId: string;
   priceTon: number;
   status: string;
   escrowStatus: string;
-  releaseCode?: string;
+  reservationMode?: ReservationMode;
   buyer?: string | null;
   buyerContact?: string;
+  buyerWalletAddress?: string;
+  sellerWalletAddress?: string;
   cancellationReason?: string;
 };
 
@@ -23,49 +27,70 @@ type ReservationResponse = {
     ok: boolean;
     error?: string;
   };
+  balanceCheck?: {
+    ok: boolean;
+    statusMessage: string;
+    balanceTon: number;
+  };
 };
+
+type MutationResponse = {
+  error?: string;
+  sellerNotification?: {
+    ok: boolean;
+    error?: string;
+  };
+};
+
+function describeReservationMode(mode?: ReservationMode) {
+  if (mode === "balance_check") {
+    return "real balance-check mode";
+  }
+
+  return "demo mode";
+}
 
 export function PurchasePanel({
   listingId,
   priceTon,
   status,
   escrowStatus,
-  releaseCode,
+  reservationMode,
   buyer,
   buyerContact,
+  buyerWalletAddress,
+  sellerWalletAddress,
   cancellationReason,
 }: PurchasePanelProps) {
   const router = useRouter();
+  const [tonConnectUI] = useTonConnectUI();
   const walletAddress = useTonAddress();
   const [buyerName, setBuyerName] = useState("");
   const [buyerContactInput, setBuyerContactInput] = useState("@buyer");
+  const [reservationModeInput, setReservationModeInput] = useState<ReservationMode>(
+    sellerWalletAddress ? "balance_check" : "demo",
+  );
   const [manualCode, setManualCode] = useState("");
   const [cancelReason, setCancelReason] = useState("Item not as described or seller did not show up.");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
 
-  async function postAction(path: string, payload: Record<string, string | undefined>, successMessage: string) {
-    const response = await fetch(path, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const body = (await response.json()) as { error?: string };
-    if (!response.ok) {
-      throw new Error(body.error || "Action failed.");
-    }
-
-    startTransition(() => {
-      setMessage(successMessage);
-      router.refresh();
-    });
-  }
-
+  const normalizedEscrowState = escrowStatus === "funds_locked" ? "reserved_pending_seller" : escrowStatus;
+  const escrowStatusLabel = labelEscrowStatus(escrowStatus);
+  const effectiveReservationMode = reservationMode || reservationModeInput;
+  const attachedBuyerWallet = buyerWalletAddress || walletAddress || "";
   async function purchaseListing() {
     setMessage("");
+
+    if (reservationModeInput === "balance_check" && !walletAddress) {
+      setMessage("Connect the buyer wallet before using real balance-check mode.");
+      return;
+    }
+
+    if (reservationModeInput === "balance_check" && !sellerWalletAddress) {
+      setMessage("This listing has no seller wallet configured, so only demo mode is available.");
+      return;
+    }
 
     try {
       const response = await fetch(`/api/listings/${listingId}/purchase`, {
@@ -77,6 +102,7 @@ export function PurchasePanel({
           buyerName: buyerName || undefined,
           buyerContact: buyerContactInput,
           walletAddress: walletAddress || undefined,
+          reservationMode: reservationModeInput,
         }),
       });
 
@@ -88,9 +114,13 @@ export function PurchasePanel({
       const notificationMessage = body.sellerNotification?.ok
         ? "The seller was notified on Telegram."
         : `Seller Telegram notification failed: ${body.sellerNotification?.error || "Unknown error."}`;
+      const balanceMessage =
+        reservationModeInput === "balance_check" && body.balanceCheck?.ok
+          ? `Buyer balance verified: ${body.balanceCheck.balanceTon.toFixed(3)} TON available.`
+          : "No TON was transferred at reservation time.";
 
       startTransition(() => {
-        setMessage(`Reservation created. No TON was transferred. ${notificationMessage}`);
+        setMessage(`Reservation created in ${describeReservationMode(reservationModeInput)}. ${balanceMessage} ${notificationMessage}`);
         router.refresh();
       });
     } catch (error) {
@@ -101,14 +131,69 @@ export function PurchasePanel({
   async function releaseEscrow() {
     setMessage("");
 
+    if (!manualCode.trim()) {
+      setMessage("Enter the private code shown by the seller during the meetup.");
+      return;
+    }
+
     try {
-      await postAction(
-        `/api/listings/${listingId}/release`,
-        {
-          releaseCode: manualCode || undefined,
+      let transactionRef: string | undefined;
+
+      if (effectiveReservationMode === "balance_check") {
+        if (!walletAddress) {
+          throw new Error("Connect the buyer wallet before sending the TON transfer.");
+        }
+
+        if (!sellerWalletAddress) {
+          throw new Error("No seller wallet is configured for this listing.");
+        }
+
+        const transactionResult = (await tonConnectUI.sendTransaction({
+          validUntil: Math.floor(Date.now() / 1000) + 300,
+          network: appConfig.tonNetwork === "testnet" ? "-3" : undefined,
+          messages: [
+            {
+              address: sellerWalletAddress,
+              amount: toNanoString(priceTon),
+            },
+          ],
+        })) as { boc?: string };
+
+        transactionRef = transactionResult?.boc
+          ? `tonconnect:${transactionResult.boc.slice(0, 32)}`
+          : `tonconnect:${Date.now()}`;
+      }
+
+      const response = await fetch(`/api/listings/${listingId}/release`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-        "Buyer confirmed the item after inspection. Funds were released to the seller.",
-      );
+        body: JSON.stringify({
+          releaseCode: manualCode.trim(),
+          transactionRef,
+        }),
+      });
+
+      const body = (await response.json()) as MutationResponse;
+      if (!response.ok) {
+        throw new Error(body.error || "Release failed.");
+      }
+
+      const sellerMessage = body.sellerNotification?.ok
+        ? "The seller was notified on Telegram."
+        : body.sellerNotification?.error
+          ? `Seller Telegram notification failed: ${body.sellerNotification.error}`
+          : "";
+
+      startTransition(() => {
+        setMessage(
+          effectiveReservationMode === "balance_check"
+            ? `Buyer validated the item, sent TON to the seller wallet, and completed the release. ${sellerMessage}`.trim()
+            : `Buyer validated the item and completed the demo release. ${sellerMessage}`.trim(),
+        );
+        router.refresh();
+      });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Release failed.");
     }
@@ -118,13 +203,29 @@ export function PurchasePanel({
     setMessage("");
 
     try {
-      await postAction(
-        `/api/listings/${listingId}/cancel`,
-        {
-          reason: cancelReason || undefined,
+      const response = await fetch(`/api/listings/${listingId}/cancel`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-        "The meetup was cancelled. Funds stay unreleased in the demo flow.",
-      );
+        body: JSON.stringify({
+          reason: cancelReason || undefined,
+        }),
+      });
+
+      const body = (await response.json()) as MutationResponse;
+      if (!response.ok) {
+        throw new Error(body.error || "Cancellation failed.");
+      }
+
+      const notificationMessage = body.sellerNotification?.ok
+        ? "The seller was notified on Telegram."
+        : `Seller Telegram notification failed: ${body.sellerNotification?.error || "Unknown error."}`;
+
+      startTransition(() => {
+        setMessage(`Reservation cancelled. ${notificationMessage}`);
+        router.refresh();
+      });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Cancellation failed.");
     }
@@ -141,19 +242,24 @@ export function PurchasePanel({
       </div>
 
       <p className="mutedText">
-        Reservation is currently a demo hold. No TON is transferred at reservation time. Wallet connection is only used
-        to attach the buyer wallet when available.
+        Reservation never debits TON. Demo mode skips chain checks. Real mode only verifies buyer balance at reservation time and
+        sends TON to the seller wallet only after the meetup code is entered.
       </p>
 
       <div className="codePanel">
         <span>Current escrow step</span>
-        <strong>{escrowStatus}</strong>
+        <strong>{escrowStatusLabel}</strong>
       </div>
+
+      <p className="mutedText">
+        Seller wallet: <strong>{sellerWalletAddress || "not configured"}</strong>
+      </p>
 
       {buyer ? (
         <p className="mutedText">
-          Buyer attached to this escrow: <strong>{buyer}</strong>
+          Buyer attached to this reservation: <strong>{buyer}</strong>
           {buyerContact ? ` (${buyerContact})` : ""}
+          {attachedBuyerWallet ? ` - wallet ${attachedBuyerWallet}` : ""}
         </p>
       ) : null}
 
@@ -171,21 +277,34 @@ export function PurchasePanel({
               placeholder="@username or +212..."
             />
           </label>
+          <label>
+            Reservation mode
+            <select
+              value={reservationModeInput}
+              onChange={(event) => setReservationModeInput(event.target.value as ReservationMode)}
+            >
+              <option value="demo">Demo reservation only</option>
+              <option value="balance_check" disabled={!sellerWalletAddress}>
+                Real release flow: verify buyer balance now, pay seller at meetup release
+              </option>
+            </select>
+          </label>
+          {reservationModeInput === "balance_check" ? (
+            <p className="mutedText">
+              Connected buyer wallet required now. TON will not move until the buyer enters the seller code at meetup time.
+            </p>
+          ) : null}
           <button className="primaryButton" disabled={isPending} onClick={() => void purchaseListing()}>
-            Reserve item without TON transfer
+            {reservationModeInput === "balance_check" ? "Reserve meetup and verify buyer balance" : "Reserve meetup in demo mode"}
           </button>
         </>
       ) : null}
 
-      {escrowStatus === "funds_locked" ? (
+      {normalizedEscrowState === "reserved_pending_seller" ? (
         <>
-          <div className="codePanel">
-            <span>Meetup release code</span>
-            <strong>{releaseCode || "Pending"}</strong>
-          </div>
           <p className="mutedText">
-            The item is reserved. The seller must accept or cancel directly in Telegram. The buyer can still cancel from here if
-            the meetup falls through.
+            The meetup is reserved in <strong>{describeReservationMode(effectiveReservationMode)}</strong>. The seller now decides in
+            Telegram whether to accept or cancel. The private release code remains seller-side only.
           </p>
           <label>
             Cancellation reason
@@ -197,22 +316,20 @@ export function PurchasePanel({
         </>
       ) : null}
 
-      {escrowStatus === "seller_accepted" ? (
+      {normalizedEscrowState === "seller_accepted" ? (
         <>
-          <div className="codePanel">
-            <span>Meetup release code</span>
-            <strong>{releaseCode || "Pending"}</strong>
-          </div>
           <p className="mutedText">
-            The seller accepted the meetup in Telegram. The buyer now inspects the item in real life and decides whether to
-            release or cancel.
+            The seller accepted the meetup in Telegram. After inspecting the product in person, the buyer must enter the private code
+            shown by the seller to finalize the release.
           </p>
           <label>
-            Confirm release code
-            <input value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder="Optional in demo mode" />
+            Release code shown by seller
+            <input value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder="Enter meetup code" />
           </label>
           <button className="primaryButton" disabled={isPending} onClick={() => void releaseEscrow()}>
-            Buyer confirms item and releases funds
+            {effectiveReservationMode === "balance_check"
+              ? "Buyer validates item and sends TON to seller"
+              : "Buyer validates item and completes demo release"}
           </button>
           <label>
             Cancellation reason
@@ -224,7 +341,12 @@ export function PurchasePanel({
         </>
       ) : null}
 
-      {status === "sold" ? <p className="successText">The buyer accepted the item in person and the seller was paid.</p> : null}
+      {status === "sold" ? (
+        <p className="successText">
+          The buyer validated the item in person and the reservation was completed
+          {effectiveReservationMode === "balance_check" ? " with a TON transfer to the seller wallet." : " in demo mode."}
+        </p>
+      ) : null}
       {status === "cancelled" ? (
         <p className="errorText">The meetup did not complete. Reason: {cancellationReason || "Not provided."}</p>
       ) : null}
@@ -232,3 +354,4 @@ export function PurchasePanel({
     </section>
   );
 }
+

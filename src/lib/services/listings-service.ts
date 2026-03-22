@@ -15,7 +15,15 @@ function normalizeEscrowStatus(status: string): EscrowStatus {
     return "seller_accepted";
   }
 
+  if (status === "funds_locked") {
+    return "reserved_pending_seller";
+  }
+
   return status as EscrowStatus;
+}
+
+function createReleaseCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
 export async function listListings() {
@@ -42,6 +50,7 @@ export async function createListing(input: ListingDraftInput) {
     priceTon: draft.priceTon,
     sellerHandle: input.sellerHandle,
     sellerTelegramChatId: input.sellerChatId,
+    sellerWalletAddress: input.sellerWalletAddress,
     city: input.city,
     imageUrl:
       imageResult.imageUrl ||
@@ -87,12 +96,14 @@ export async function reserveListing(id: string, purchaseIntent: PurchaseIntent)
   listing.status = "reserved";
   listing.escrow = {
     ...listing.escrow,
-    status: "funds_locked",
+    status: "reserved_pending_seller",
     buyer: buyerIdentity,
     buyerContact: purchaseIntent.buyerContact.trim(),
-    buyerWalletAddress: purchaseIntent.walletAddress,
-    releaseCode: Math.random().toString(36).slice(2, 8).toUpperCase(),
-    transactionRef: purchaseIntent.walletAddress || "demo-simulation",
+    buyerWalletAddress: purchaseIntent.walletAddress?.trim(),
+    reservationMode: purchaseIntent.reservationMode,
+    releaseCode: createReleaseCode(),
+    transactionRef: purchaseIntent.reservationMode === "balance_check" ? "balance-check-verified" : "demo-reservation",
+    balanceVerifiedAt: purchaseIntent.reservationMode === "balance_check" ? nextTimestamp : undefined,
     fundsLockedAt: nextTimestamp,
     cancellationReason: undefined,
     cancelledAt: undefined,
@@ -114,8 +125,8 @@ export async function acceptMeetup(id: string) {
   }
 
   const normalizedStatus = normalizeEscrowStatus(listing.escrow.status);
-  if (normalizedStatus !== "funds_locked") {
-    throw new Error("Funds must be locked before the seller accepts the meetup.");
+  if (normalizedStatus !== "reserved_pending_seller") {
+    throw new Error("The listing must be reserved before the seller accepts the meetup.");
   }
 
   const nextTimestamp = nowIso();
@@ -131,7 +142,13 @@ export async function acceptMeetup(id: string) {
   return listing;
 }
 
-export async function releaseListingEscrow(id: string, providedCode?: string) {
+export async function releaseListingEscrow(
+  id: string,
+  options?: {
+    providedCode?: string;
+    transactionRef?: string;
+  },
+) {
   const listings = await readListings();
   const listing = listings.find((item) => item.id === id);
 
@@ -141,11 +158,22 @@ export async function releaseListingEscrow(id: string, providedCode?: string) {
 
   const normalizedStatus = normalizeEscrowStatus(listing.escrow.status);
   if (normalizedStatus !== "seller_accepted") {
-    throw new Error("The seller must accept the meetup before the buyer releases funds.");
+    throw new Error("The seller must accept the meetup before the buyer can release payment.");
   }
 
-  if (listing.escrow.releaseCode && providedCode && listing.escrow.releaseCode !== providedCode.trim().toUpperCase()) {
+  const expectedCode = listing.escrow.releaseCode?.trim().toUpperCase();
+  const providedCode = options?.providedCode?.trim().toUpperCase();
+
+  if (expectedCode && !providedCode) {
+    throw new Error("The seller release code is required.");
+  }
+
+  if (expectedCode && providedCode !== expectedCode) {
     throw new Error("Release code does not match.");
+  }
+
+  if (listing.escrow.reservationMode === "balance_check" && !options?.transactionRef?.trim()) {
+    throw new Error("A TON payment proof is required before the release can be finalized.");
   }
 
   const nextTimestamp = nowIso();
@@ -153,6 +181,7 @@ export async function releaseListingEscrow(id: string, providedCode?: string) {
   listing.escrow = {
     ...listing.escrow,
     status: "released",
+    transactionRef: options?.transactionRef?.trim() || listing.escrow.transactionRef,
     releasedAt: nextTimestamp,
     lastUpdatedAt: nextTimestamp,
   };
@@ -170,7 +199,7 @@ export async function cancelListingEscrow(id: string, reason?: string) {
   }
 
   const normalizedStatus = normalizeEscrowStatus(listing.escrow.status);
-  if (!["funds_locked", "seller_accepted"].includes(normalizedStatus)) {
+  if (!["reserved_pending_seller", "seller_accepted"].includes(normalizedStatus)) {
     throw new Error("Only a reserved meetup can be cancelled.");
   }
 
@@ -181,8 +210,10 @@ export async function cancelListingEscrow(id: string, reason?: string) {
     buyer: null,
     buyerContact: undefined,
     buyerWalletAddress: undefined,
+    reservationMode: undefined,
     releaseCode: undefined,
     transactionRef: undefined,
+    balanceVerifiedAt: undefined,
     fundsLockedAt: undefined,
     sellerAcceptedAt: undefined,
     releasedAt: undefined,

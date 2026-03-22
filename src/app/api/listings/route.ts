@@ -12,6 +12,7 @@ export async function POST(request: Request) {
     sellerPrompt?: string;
     imageUrl?: string;
     sellerHandle?: string;
+    sellerWalletAddress?: string;
     city?: string;
     desiredPriceTon?: number;
   };
@@ -24,6 +25,7 @@ export async function POST(request: Request) {
     sellerPrompt: body.sellerPrompt,
     imageUrl: body.imageUrl,
     sellerHandle: body.sellerHandle,
+    sellerWalletAddress: body.sellerWalletAddress,
     city: body.city,
     desiredPriceTon: body.desiredPriceTon,
   });

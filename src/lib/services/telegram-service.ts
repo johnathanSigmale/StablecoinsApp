@@ -45,10 +45,13 @@ export function buildTelegramUserUrl(handle?: string | null) {
 }
 
 export function buildContactUrl(contact?: string | null) {
-  return buildTelegramUserUrl(contact) || (() => {
-    const phone = normalizePhoneNumber(contact);
-    return phone ? `tel:${phone}` : null;
-  })();
+  return (
+    buildTelegramUserUrl(contact) ||
+    (() => {
+      const phone = normalizePhoneNumber(contact);
+      return phone ? `tel:${phone}` : null;
+    })()
+  );
 }
 
 export function buildTelegramShareText(listing: Listing) {
@@ -83,7 +86,7 @@ export async function sendTelegramBotMessage(chatId: number, text: string, rows?
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
     return {
-      ok: false,
+      ok: false as const,
       error: "Missing TELEGRAM_BOT_TOKEN.",
     };
   }
@@ -168,9 +171,12 @@ export async function notifySellerReservation(listing: Listing) {
       `Listing: ${listing.title}`,
       `Buyer: ${listing.escrow.buyer || "Unknown buyer"}`,
       listing.escrow.buyerContact ? `Buyer contact: ${listing.escrow.buyerContact}` : "",
+      `Reservation mode: ${listing.escrow.reservationMode || "demo"}`,
+      listing.sellerWalletAddress ? `Seller wallet: ${listing.sellerWalletAddress}` : "Seller wallet: not configured",
       `Status: ${listing.escrow.status}`,
       `Release code: ${listing.escrow.releaseCode || "Pending"}`,
       "",
+      "Keep the release code private until the in-person inspection is complete.",
       "Use the buttons below to accept or cancel directly from Telegram.",
     ]
       .filter(Boolean)
@@ -194,6 +200,29 @@ export async function notifySellerBuyerCancelled(listing: Listing, reason?: stri
       reason ? `Reason: ${reason}` : "",
       "",
       "The listing is available again for new reservations.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    [[{ text: "Open listing", url: buildListingUrl(listing) }]],
+  );
+}
+
+export async function notifySellerFundsReleased(listing: Listing) {
+  if (!listing.sellerTelegramChatId) {
+    return { ok: false as const, error: "Listing has no sellerTelegramChatId." };
+  }
+
+  return sendTelegramBotMessage(
+    listing.sellerTelegramChatId,
+    [
+      "Buyer confirmed the meetup.",
+      "",
+      `Listing: ${listing.title}`,
+      `Buyer: ${listing.escrow.buyer || "Unknown buyer"}`,
+      `Reservation mode: ${listing.escrow.reservationMode || "demo"}`,
+      listing.escrow.transactionRef ? `Transaction proof: ${listing.escrow.transactionRef}` : "",
+      "",
+      "The listing is now marked as sold.",
     ]
       .filter(Boolean)
       .join("\n"),
