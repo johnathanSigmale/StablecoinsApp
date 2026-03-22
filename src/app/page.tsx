@@ -1,5 +1,8 @@
 import Link from "next/link";
 
+export const dynamic = "force-dynamic";
+
+
 import { ListingCard } from "@/components/listing-card";
 import { listListings } from "@/lib/services/listings-service";
 
