@@ -21,7 +21,7 @@ type HeroImageResult = {
   statusMessage: string;
 };
 
-const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash-lite";
+const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash";
 
 function inlinePartFromDataUrl(dataUrl: string): GeminiPart | null {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
@@ -74,7 +74,7 @@ function inferCondition(prompt: string) {
     return "Very Good";
   }
 
-  if (normalized.match(/used|good|works well|bon etat|bon Ã©tat/)) {
+  if (normalized.match(/used|good|works well|bon etat/)) {
     return "Good";
   }
 
@@ -288,17 +288,21 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
   }
 
   const explicitPriceTon = input.desiredPriceTon ?? extractExplicitTonPrice(input.sellerPrompt);
+  const shouldUseSearch = !explicitPriceTon;
   const parts: GeminiPart[] = [
     {
       text: [
         "You help sellers create Telegram-native second-hand electronics listings for a TON commerce assistant.",
         "Return JSON only.",
         "Rewrite the description in polished marketplace language. Do not copy the seller sentence verbatim.",
-        "Use the seller photo when present to identify the exact product model and improve the listing.",
+        "First identify the most likely brand and exact model from the seller photo and prompt.",
+        "If the exact model is uncertain, infer the most likely brand and product family instead of using a generic title.",
+        "Use the seller photo when present to identify the product and improve the listing.",
         explicitPriceTon
           ? `The seller explicitly set the price to ${explicitPriceTon} TON. Preserve that exact TON price.`
-          : "The seller did not provide a TON price. Estimate a fair current second-hand TON price for the exact product model. Do not use a canned category default.",
+          : "The seller did not provide a TON price. Use available search grounding and the seller photo to estimate a fair current second-hand TON price for the identified product. If the exact model is uncertain, estimate from the closest matching product family and explain that logic in pricingRationale. Do not use a canned category default.",
         "Keep the tone concise, credible, and marketplace-ready.",
+        "Prefer a title that starts with the identified brand and model whenever possible.",
         `Seller handle: ${input.sellerHandle}`,
         `City: ${input.city}`,
         `Seller prompt: ${input.sellerPrompt}`,
@@ -318,6 +322,7 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`,
       {
         contents: [{ parts }],
+        tools: shouldUseSearch ? [{ google_search: {} }] : undefined,
         generationConfig: {
           responseMimeType: "application/json",
           responseSchema: buildDraftSchema(),
@@ -344,6 +349,11 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
       candidates?: Array<{
         content?: {
           parts?: Array<{ text?: string }>;
+        };
+        groundingMetadata?: {
+          webSearchQueries?: string[];
+          searchEntryPoint?: unknown;
+          groundingChunks?: unknown[];
         };
       }>;
     };
@@ -372,6 +382,7 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
     if (!explicitPriceTon && !parsed.aiInsights.pricingRationale) {
       parsed.aiInsights.pricingRationale = `AI-estimated market price for the product is about ${parsed.priceTon} TON.`;
     }
+
 
     return {
       draft: parsed,
