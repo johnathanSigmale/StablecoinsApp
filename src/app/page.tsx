@@ -13,18 +13,17 @@ export default async function HomePage() {
     <main className="pageShell">
       <section className="heroSection">
         <div className="heroCopy">
-          <span className="eyebrow">AlphaTON Capital Track</span>
-          <h1>Conversational commerce on TON, built for Telegram distribution.</h1>
+          <span className="eyebrow">Local marketplace on TON</span>
+          <h1>Buy and sell anything, locally on TON.</h1>
           <p>
-            FlipBot AI turns one seller message into a polished listing, then lets buyers reserve a meetup, verify wallet
-            readiness, and complete payment only after the in-person check.
+            Send a photo and a message — JohnTon drafts a polished listing instantly. Buyers reserve through Telegram, inspect in person, and pay only once they&apos;re happy.
           </p>
           <div className="actionRow">
             <Link className="primaryButton" href="/create">
-              Create listing
+              Start selling
             </Link>
             <a className="secondaryButton" href="#listings">
-              Explore live demo
+              Browse listings
             </a>
           </div>
         </div>
@@ -34,9 +33,9 @@ export default async function HomePage() {
             <p>&ldquo;Selling my Quest 2 with charger and case. Great condition. Need a fast meetup in Casa.&rdquo;</p>
           </div>
           <div className="chatBubble botBubble">
-            <span>FlipBot AI</span>
+            <span>JohnTon</span>
             <p>
-              Draft ready: <strong>Meta Quest 2 128GB</strong> at <strong>145 TON</strong>. Share it in Telegram and let
+              Listing ready: <strong>Meta Quest 2 128GB</strong> at <strong>145 TON</strong>. Share it in Telegram and let
               buyers reserve the meetup in seconds.
             </p>
           </div>
@@ -47,11 +46,11 @@ export default async function HomePage() {
             </div>
             <div>
               <strong>Meetup-first</strong>
-              <span>release code at handoff</span>
+              <span>pay after inspection</span>
             </div>
             <div>
               <strong>Telegram-native</strong>
-              <span>distribution path</span>
+              <span>built for communities</span>
             </div>
           </div>
         </div>
@@ -59,29 +58,29 @@ export default async function HomePage() {
 
       <section className="threeUp">
         <article className="glassPanel">
-          <span className="eyebrow">Seller UX</span>
-          <h2>Photo or text in, listing out</h2>
-          <p>Use the bot to generate the listing, attach your wallet, and push a shareable commerce link in seconds.</p>
+          <span className="eyebrow">Sellers</span>
+          <h2>Photo in, listing out</h2>
+          <p>Message the bot with a photo and description — JohnTon generates the listing, attaches your wallet, and gives you a shareable link.</p>
         </article>
         <article className="glassPanel">
-          <span className="eyebrow">Buyer UX</span>
+          <span className="eyebrow">Buyers</span>
           <h2>Reserve first, pay after inspection</h2>
-          <p>Buyers discover listings in Telegram, open the Mini App, reserve the meetup, and pay only after checking the product.</p>
+          <p>Discover listings in Telegram, reserve the meetup, inspect the product in person, then confirm payment — no risk.</p>
         </article>
         <article className="glassPanel">
-          <span className="eyebrow">Business</span>
-          <h2>Practical fee model</h2>
-          <p>Charge a take rate on released escrow or premium boosts for sellers posting into high-intent groups.</p>
+          <span className="eyebrow">Payments</span>
+          <h2>Secure TON escrow</h2>
+          <p>Funds only move when the buyer confirms the transaction after the in-person meetup. Both sides are protected.</p>
         </article>
       </section>
 
       <section className="sectionHeader" id="listings">
         <div>
-          <span className="eyebrow">Live Demo</span>
+          <span className="eyebrow">Marketplace</span>
           <h2>Active listings</h2>
         </div>
         <Link className="secondaryButton" href="/create">
-          Add a new listing
+          Add a listing
         </Link>
       </section>
 

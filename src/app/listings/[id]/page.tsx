@@ -28,7 +28,7 @@ function describeEscrowStep(status: string) {
     case "seller_accepted":
       return {
         title: "Meetup accepted",
-        description: "The seller accepted the meetup. The buyer inspects the item in person and enters the private code to release payment.",
+        description: "The seller accepted the meetup. The buyer inspects the item in person and confirms the transaction to release payment.",
       };
     case "released":
       return {

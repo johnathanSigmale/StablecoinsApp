@@ -20,7 +20,7 @@ type SellerProfilesStore = Record<string, SellerProfile>;
 const runtimeDirectory = process.env.TMPDIR || process.env.TEMP || "/tmp";
 const localStoragePath =
   process.env.NODE_ENV === "production"
-    ? path.join(runtimeDirectory, "flipbot-ai-seller-profiles.json")
+    ? path.join(runtimeDirectory, "johnton-seller-profiles.json")
     : path.join(process.cwd(), "data", "seller-profiles.json");
 
 async function ensureLocalStore() {

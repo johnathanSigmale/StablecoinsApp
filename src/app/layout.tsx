@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import "./globals.css";
 
 import { TonProvider } from "@/components/providers/ton-provider";
@@ -13,7 +14,23 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <TonProvider>{children}</TonProvider>
+        <TonProvider>
+          <header className="siteHeader">
+            <div className="siteHeaderInner">
+              <Link className="siteLogo" href="/">
+                <span className="logoMark">J</span>
+                JohnTon
+              </Link>
+              <nav className="siteNav">
+                <Link href="/">Marketplace</Link>
+                <Link className="primaryButton" href="/create">
+                  Sell
+                </Link>
+              </nav>
+            </div>
+          </header>
+          {children}
+        </TonProvider>
       </body>
     </html>
   );

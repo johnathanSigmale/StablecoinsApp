@@ -54,15 +54,15 @@ async function sendTelegramMessage(chatId: number, text: string, rows?: SendRows
 
 function buildWelcomeMessage() {
   return [
-    "Welcome to FlipBot AI.",
+    "Welcome to JohnTon.",
     "",
     "1. Set your seller wallet first:",
-    "/wallet <your TON testnet address>",
+    "/wallet <your TON address>",
     "",
     "2. Then send one product photo with the caption in the same message.",
-    "Example caption: Selling my Meta Quest 2 with charger, very clean, meetup in Casablanca, 150 TON.",
+    "Example: Selling my Meta Quest 2 with charger, very clean, meetup in Casablanca, 150 TON.",
     "",
-    "I will create the listing and return a shareable Telegram link.",
+    "I will create the listing and return a shareable link.",
   ].join("\n");
 }
 
@@ -240,7 +240,7 @@ export async function POST(request: Request) {
 
     const walletAddress = extractWalletCommand(prompt);
     if (!walletAddress) {
-      await sendTelegramMessage(chatId, "Usage: /wallet <your TON testnet address>");
+      await sendTelegramMessage(chatId, "Usage: /wallet <your TON address>");
       return NextResponse.json({ ok: true, walletRequired: true, updateType });
     }
 
@@ -286,7 +286,7 @@ export async function POST(request: Request) {
             "",
             "Send a product photo with caption to create a listing.",
           ].join("\n")
-        : "No seller wallet is saved for this chat yet. Use /wallet <your TON testnet address> first.",
+        : "No seller wallet is saved for this chat yet. Use /wallet <your TON address> first.",
     );
 
     return NextResponse.json({ ok: true, profileShown: true, updateType });
@@ -308,7 +308,7 @@ export async function POST(request: Request) {
     if (!sellerProfile?.walletAddress) {
       await sendTelegramMessage(
         chatId,
-        "Set your seller wallet first with /wallet <your TON testnet address>, then send the product photo again.",
+        "Set your seller wallet first with /wallet <your TON address>, then send the product photo again.",
       );
       return NextResponse.json({ ok: true, walletRequired: true, updateType });
     }

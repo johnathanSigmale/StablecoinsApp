@@ -7,7 +7,7 @@ import { hasRedisStore, readRedisJson, writeRedisJson } from "@/lib/server/redis
 const runtimeDirectory = process.env.TMPDIR || process.env.TEMP || "/tmp";
 const localStoragePath =
   process.env.NODE_ENV === "production"
-    ? path.join(runtimeDirectory, "flipbot-ai-listings.json")
+    ? path.join(runtimeDirectory, "johnton-listings.json")
     : path.join(process.cwd(), "data", "listings.json");
 
 async function ensureLocalStore() {
