@@ -13,10 +13,11 @@ type PartialListingDraft = Partial<ListingDraft> & {
   aiInsights?: Partial<ListingAiInsights>;
 };
 
-type DraftResult = {
+export type DraftResult = {
   draft: ListingDraft;
   source: "gemini" | "fallback";
   statusMessage: string;
+  clarificationNeeded?: string;
 };
 
 type HeroImageResult = {
@@ -249,6 +250,7 @@ function buildDraftSchema() {
       category: { type: "string" },
       condition: { type: "string" },
       priceTon: { type: "number" },
+      clarificationNeeded: { type: "string" },
       aiInsights: {
         type: "object",
         properties: {
@@ -290,7 +292,28 @@ async function fetchGeminiWithRetry(url: string, body: unknown, apiKey: string) 
   return lastResponse;
 }
 
-function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number): GeminiPart[] {
+async function fetchWebContext(apiKey: string, sellerPrompt: string): Promise<string | null> {
+  try {
+    const query = `Current second-hand market price and key specifications for: ${sellerPrompt}`;
+    const response = await fetchGeminiWithRetry(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`,
+      {
+        contents: [{ parts: [{ text: query }] }],
+        tools: [{ google_search: {} }],
+      },
+      apiKey,
+    );
+
+    if (!response || !response.ok) return null;
+
+    const payload = (await response.json()) as GeminiPayload;
+    return payload.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("\n").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number, webContext?: string): GeminiPart[] {
   return [
     {
       text: [
@@ -302,13 +325,17 @@ function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number): 
         "Use the seller photo when present to identify the product and improve the listing.",
         explicitPriceTon
           ? `The seller explicitly set the price to ${explicitPriceTon} TON. Preserve that exact TON price.`
-          : "The seller did not provide a TON price. Estimate a fair current second-hand TON price for the identified product. If the exact model is uncertain, estimate from the closest matching product family and explain that logic in pricingRationale.",
+          : "The seller did not provide a TON price. Estimate a fair current second-hand TON price based primarily on the web research context above and the product's condition. Adjust downward from the new retail price according to condition (Excellent: ~75-85%, Very Good: ~60-75%, Good: ~45-60%, Fair: ~30-45%). If the exact model is uncertain, estimate from the closest matching product family and explain that logic in pricingRationale.",
         "Keep the tone concise, credible, and marketplace-ready.",
         "Prefer a title that starts with the identified brand and model whenever possible.",
+        "If and only if the photo is too blurry to identify any product, OR the seller's city or location is completely absent from the prompt, set clarificationNeeded to one short, friendly question asking for that specific missing info. In all other cases leave clarificationNeeded empty.",
+        webContext ? `Web research context (use this to improve accuracy of price and specs):\n${webContext}` : "",
         `Seller handle: ${input.sellerHandle}`,
         `City: ${input.city}`,
         `Seller prompt: ${input.sellerPrompt}`,
-      ].join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
     },
   ];
 }
@@ -353,7 +380,8 @@ function normalizeGeminiDraft(input: ListingDraftInput, parsed: PartialListingDr
 }
 
 async function requestGeminiDraft(apiKey: string, input: ListingDraftInput, explicitPriceTon?: number) {
-  const parts = buildGeminiParts(input, explicitPriceTon);
+  const webContext = await fetchWebContext(apiKey, input.sellerPrompt);
+  const parts = buildGeminiParts(input, explicitPriceTon, webContext ?? undefined);
   const imagePart = input.imageUrl ? await fetchImageAsInlinePart(input.imageUrl) : null;
   if (imagePart) {
     parts.push(imagePart);
@@ -431,13 +459,19 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
       };
     }
 
-    const parsed = mergeWithFallbackDraft(input, JSON.parse(extractJsonCandidate(content)) as Partial<ListingDraft>);
+    const rawJson = JSON.parse(extractJsonCandidate(content)) as Partial<ListingDraft> & { clarificationNeeded?: string };
+    const clarificationNeeded =
+      typeof rawJson.clarificationNeeded === "string" && rawJson.clarificationNeeded.trim()
+        ? rawJson.clarificationNeeded.trim()
+        : undefined;
 
+    const parsed = mergeWithFallbackDraft(input, rawJson);
     const draft = normalizeGeminiDraft(input, parsed);
 
     return {
       draft,
       source: "gemini",
+      clarificationNeeded,
       statusMessage: explicitPriceTon
         ? `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} while preserving the seller price.`
         : `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using model-based price estimation.`,

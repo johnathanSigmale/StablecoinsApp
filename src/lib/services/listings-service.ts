@@ -2,6 +2,7 @@ import {
   createListingId,
   generateListingDraftResult,
   generateListingHeroImageResult,
+  type DraftResult,
 } from "@/lib/services/ai-listing-service";
 import { getListingById, readListings, writeListings } from "@/lib/repository/listings-repository";
 import type { EscrowStatus, Listing, ListingDraftInput, PurchaseIntent } from "@/lib/types";
@@ -35,8 +36,7 @@ export async function findListing(id: string) {
   return getListingById(id);
 }
 
-export async function createListing(input: ListingDraftInput) {
-  const draftResult = await generateListingDraftResult(input);
+export async function createListingFromDraftResult(input: ListingDraftInput, draftResult: DraftResult) {
   if (draftResult.source !== "gemini") {
     throw new Error(draftResult.statusMessage || "Gemini listing generation is required.");
   }
@@ -79,6 +79,11 @@ export async function createListing(input: ListingDraftInput) {
   listings.unshift(listing);
   await writeListings(listings);
   return listing;
+}
+
+export async function createListing(input: ListingDraftInput) {
+  const draftResult = await generateListingDraftResult(input);
+  return createListingFromDraftResult(input, draftResult);
 }
 
 export async function reserveListing(id: string, purchaseIntent: PurchaseIntent) {

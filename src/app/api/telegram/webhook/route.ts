@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 
 import { getSellerProfile, upsertSellerProfile } from "@/lib/repository/seller-profiles-repository";
 import { acquireRedisLock, hasRedisStore } from "@/lib/server/redis-store";
-import { createListing } from "@/lib/services/listings-service";
+import { generateListingDraftResult } from "@/lib/services/ai-listing-service";
+import { createListingFromDraftResult } from "@/lib/services/listings-service";
 import { buildTelegramShareUrl, sendTelegramBotMessage } from "@/lib/services/telegram-service";
 import { isLikelyTonAddress } from "@/lib/utils";
+
+const PENDING_CONTEXT_TTL_MS = 30 * 60 * 1000;
 
 type TelegramPhoto = {
   file_id: string;
@@ -310,9 +313,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, walletRequired: true, updateType });
     }
 
-    const attachment = await getTelegramImageAttachment(message, updateType);
+    // Merge with pending context if a clarification was previously asked
+    const pending = sellerProfile.pendingContext;
+    const isPendingValid = Boolean(pending && Date.now() - new Date(pending.askedAt).getTime() < PENDING_CONTEXT_TTL_MS);
+    const effectivePrompt = isPendingValid && pending ? `${pending.prompt}\nSeller clarification: ${prompt}` : prompt;
 
-    if (!attachment.dataUrl) {
+    // Prefer a newly sent photo; fall back to the one stored in the pending context
+    const attachment = await getTelegramImageAttachment(message, updateType);
+    const effectiveImageDataUrl = attachment.dataUrl ?? (isPendingValid ? (pending?.imageDataUrl ?? null) : null);
+
+    if (!effectiveImageDataUrl) {
       await sendTelegramMessage(
         chatId,
         [
@@ -326,14 +336,44 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, imageRequired: true, attachmentStatus: attachment.status, updateType });
     }
 
-    const listing = await createListing({
-      sellerPrompt: prompt,
-      sellerHandle: message?.from?.username ? `@${message.from.username}` : sellerProfile.sellerHandle || "@telegram_seller",
+    const sellerHandle = message?.from?.username ? `@${message.from.username}` : sellerProfile.sellerHandle || "@telegram_seller";
+    const city = message?.chat?.title || "Telegram community";
+
+    const draftResult = await generateListingDraftResult({
+      sellerPrompt: effectivePrompt,
+      sellerHandle,
       sellerChatId: chatId,
       sellerWalletAddress: sellerProfile.walletAddress,
-      city: message?.chat?.title || "Telegram community",
-      imageUrl: attachment.dataUrl,
+      city,
+      imageUrl: effectiveImageDataUrl,
     });
+
+    if (draftResult.clarificationNeeded) {
+      await upsertSellerProfile({
+        ...sellerProfile,
+        pendingContext: {
+          prompt: effectivePrompt,
+          imageDataUrl: effectiveImageDataUrl,
+          askedAt: new Date().toISOString(),
+        },
+      });
+      await sendTelegramMessage(chatId, draftResult.clarificationNeeded);
+      return NextResponse.json({ ok: true, clarificationAsked: true, question: draftResult.clarificationNeeded, updateType });
+    }
+
+    // Clear pending context now that we have everything we need
+    if (isPendingValid) {
+      await upsertSellerProfile({ ...sellerProfile, pendingContext: undefined });
+    }
+
+    const listing = await createListingFromDraftResult({
+      sellerPrompt: effectivePrompt,
+      sellerHandle,
+      sellerChatId: chatId,
+      sellerWalletAddress: sellerProfile.walletAddress,
+      city,
+      imageUrl: effectiveImageDataUrl,
+    }, draftResult);
 
     const listingUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/listings/${listing.id}`;
     const shareUrl = buildTelegramShareUrl(listing);

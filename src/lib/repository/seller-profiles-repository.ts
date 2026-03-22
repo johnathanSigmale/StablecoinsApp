@@ -8,6 +8,11 @@ export type SellerProfile = {
   sellerHandle?: string;
   walletAddress: string;
   updatedAt: string;
+  pendingContext?: {
+    prompt: string;
+    imageDataUrl?: string;
+    askedAt: string;
+  };
 };
 
 type SellerProfilesStore = Record<string, SellerProfile>;
