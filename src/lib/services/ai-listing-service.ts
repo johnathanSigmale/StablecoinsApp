@@ -302,7 +302,7 @@ function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number): 
         "Use the seller photo when present to identify the product and improve the listing.",
         explicitPriceTon
           ? `The seller explicitly set the price to ${explicitPriceTon} TON. Preserve that exact TON price.`
-          : "The seller did not provide a TON price. Estimate a fair current second-hand TON price for the identified product using your model knowledge. If the exact model is uncertain, estimate from the closest matching product family and explain that logic in pricingRationale.",
+          : "The seller did not provide a TON price. Estimate a fair current second-hand TON price for the identified product. If the exact model is uncertain, estimate from the closest matching product family and explain that logic in pricingRationale.",
         "Keep the tone concise, credible, and marketplace-ready.",
         "Prefer a title that starts with the identified brand and model whenever possible.",
         `Seller handle: ${input.sellerHandle}`,
@@ -372,6 +372,25 @@ async function requestGeminiDraft(apiKey: string, input: ListingDraftInput, expl
   );
 }
 
+function mergeWithFallbackDraft(input: ListingDraftInput, parsed: Partial<ListingDraft>): ListingDraft {
+  const fallback = fallbackDraft(input).draft;
+  const explicitPriceTon = input.desiredPriceTon ?? extractExplicitTonPrice(input.sellerPrompt);
+  const title = parsed.title?.trim() || fallback.title;
+
+  return {
+    title,
+    summary: parsed.summary?.trim() || fallback.summary,
+    category: parsed.category?.trim() || fallback.category,
+    condition: parsed.condition?.trim() || fallback.condition,
+    priceTon: explicitPriceTon || Number(parsed.priceTon) || fallback.priceTon,
+    aiInsights: {
+      suggestedTitle: parsed.aiInsights?.suggestedTitle?.trim() || title,
+      pricingRationale: parsed.aiInsights?.pricingRationale?.trim() || fallback.aiInsights.pricingRationale,
+      tags: parsed.aiInsights?.tags?.slice(0, 6) || fallback.aiInsights.tags,
+    },
+  };
+}
+
 export async function generateListingDraftResult(input: ListingDraftInput): Promise<DraftResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -412,17 +431,7 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
       };
     }
 
-    let parsed: PartialListingDraft;
-    try {
-      parsed = JSON.parse(extractJsonCandidate(content)) as PartialListingDraft;
-    } catch (error) {
-      console.error("Gemini text JSON parsing failed:", error, content);
-      const fallback = fallbackDraft(input);
-      return {
-        ...fallback,
-        statusMessage: "Gemini text generation returned non-parseable JSON, so fallback copy generation was used.",
-      };
-    }
+    const parsed = mergeWithFallbackDraft(input, JSON.parse(extractJsonCandidate(content)) as Partial<ListingDraft>);
 
     const draft = normalizeGeminiDraft(input, parsed);
 
