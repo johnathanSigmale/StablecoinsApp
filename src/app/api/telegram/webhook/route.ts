@@ -345,12 +345,6 @@ export async function POST(request: Request) {
         "",
         `Item: ${listing.title}`,
         `Price: ${listing.priceTon} TON`,
-        `Seller wallet: ${listing.sellerWalletAddress || "not set"}`,
-        `Text source: ${listing.generation?.textSource || "unknown"}`,
-        `Image source: ${listing.generation?.imageSource || "unknown"}`,
-        `Attachment status: ${attachment.status}`,
-        listing.generation?.textStatusMessage ? `Text status: ${listing.generation.textStatusMessage}` : "",
-        listing.generation?.imageStatusMessage ? `Image status: ${listing.generation.imageStatusMessage}` : "",
         "",
         "Open and share this listing:",
         listingUrl,
@@ -369,8 +363,6 @@ export async function POST(request: Request) {
       ok: true,
       listingId: listing.id,
       nextStep: listingUrl,
-      generation: listing.generation,
-      attachmentStatus: attachment.status,
       updateType,
     });
   } catch (error) {
