@@ -10,6 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ton/core": "^0.63.1",
+    "@ton/crypto": "^3.3.0",
+    "@ton/ton": "^16.2.2",
     "@tonconnect/ui-react": "^2.0.9",
     "@vercel/kv": "^3.0.0",
     "next": "^15.0.4",

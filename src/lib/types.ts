@@ -71,6 +71,7 @@ export type PurchaseIntent = {
   buyerName?: string;
   buyerContact: string;
   walletAddress?: string;
+  transactionRef?: string;
   reservationMode: ReservationMode;
 };
 

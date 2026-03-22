@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PurchasePanel } from "@/components/purchase-panel";
+import { getEscrowWalletAddress } from "@/lib/services/escrow-service";
 import { findListing } from "@/lib/services/listings-service";
 import {
   buildContactUrl,
@@ -56,6 +57,7 @@ export default async function ListingPage({ params }: ListingPageProps) {
     notFound();
   }
 
+  const escrowWalletAddress = getEscrowWalletAddress();
   const shareText = buildTelegramShareText(listing);
   const telegramShareUrl = buildTelegramShareUrl(listing);
   const sellerTelegramUrl = buildTelegramUserUrl(listing.sellerHandle);
@@ -102,12 +104,13 @@ export default async function ListingPage({ params }: ListingPageProps) {
           priceTon={listing.priceTon}
           status={listing.status}
           escrowStatus={listing.escrow.status}
-          reservationMode={listing.escrow.reservationMode}
+          escrowWalletAddress={escrowWalletAddress}
           buyer={listing.escrow.buyer}
           buyerContact={listing.escrow.buyerContact}
           buyerWalletAddress={listing.escrow.buyerWalletAddress}
           sellerWalletAddress={listing.sellerWalletAddress}
           cancellationReason={listing.escrow.cancellationReason}
+          transactionRef={listing.escrow.transactionRef}
         />
       </section>
 

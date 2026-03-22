@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(node -e \"const t = require\\(''@ton/ton''\\); console.log\\(Object.keys\\(t\\).filter\\(k => k.includes\\(''Wallet''\\)\\).join\\('', ''\\)\\)\")",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}
