@@ -54,7 +54,7 @@ export async function createListingFromDraftResult(input: ListingDraftInput, dra
     sellerHandle: input.sellerHandle,
     sellerTelegramChatId: input.sellerChatId,
     sellerWalletAddress: input.sellerWalletAddress,
-    city: input.city,
+    city: draft.city || input.city,
     imageUrl:
       imageResult.imageUrl ||
       input.imageUrl ||

@@ -337,7 +337,7 @@ export async function POST(request: Request) {
     }
 
     const sellerHandle = message?.from?.username ? `@${message.from.username}` : sellerProfile.sellerHandle || "@telegram_seller";
-    const city = message?.chat?.title || "Telegram community";
+    const city = message?.chat?.title || '';
 
     const draftResult = await generateListingDraftResult({
       sellerPrompt: effectivePrompt,

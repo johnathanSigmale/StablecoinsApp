@@ -79,6 +79,7 @@ export type ListingDraft = {
   summary: string;
   category: string;
   condition: string;
+  city: string;
   priceTon: number;
   aiInsights: ListingAiInsights;
 };

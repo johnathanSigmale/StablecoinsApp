@@ -191,6 +191,7 @@ function fallbackDraft(input: ListingDraftInput): DraftResult {
       summary: rewriteFallbackSummary(input.sellerPrompt, title, input.city, condition),
       category,
       condition,
+      city: input.city,
       priceTon,
       aiInsights,
     },
@@ -249,6 +250,7 @@ function buildDraftSchema() {
       summary: { type: "string" },
       category: { type: "string" },
       condition: { type: "string" },
+      city: { type: "string" },
       priceTon: { type: "number" },
       clarificationNeeded: { type: "string" },
       aiInsights: {
@@ -389,10 +391,11 @@ function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number, p
   ];
 }
 
-function normalizeGeminiDraft(input: ListingDraftInput, parsed: PartialListingDraft): ListingDraft {
+function normalizeGeminiDraft(input: ListingDraftInput, parsed: PartialListingDraft & { city?: string }): ListingDraft {
   const explicitPriceTon = input.desiredPriceTon ?? extractExplicitTonPrice(input.sellerPrompt);
   const category = typeof parsed.category === "string" && parsed.category.trim() ? parsed.category.trim() : inferCategory(input.sellerPrompt);
   const condition = typeof parsed.condition === "string" && parsed.condition.trim() ? parsed.condition.trim() : inferCondition(input.sellerPrompt);
+  const city = typeof parsed.city === "string" && parsed.city.trim() ? parsed.city.trim() : input.city;
   const title = typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : inferTitle(input.sellerPrompt, category);
   const summary =
     typeof parsed.summary === "string" && parsed.summary.trim()
@@ -416,6 +419,7 @@ function normalizeGeminiDraft(input: ListingDraftInput, parsed: PartialListingDr
     summary,
     category,
     condition,
+    city,
     priceTon,
     aiInsights: {
       suggestedTitle:
