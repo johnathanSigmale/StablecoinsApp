@@ -5,6 +5,7 @@ import { acquireRedisLock, hasRedisStore } from "@/lib/server/redis-store";
 import { generateListingDraftResult } from "@/lib/services/ai-listing-service";
 import { createListingFromDraftResult } from "@/lib/services/listings-service";
 import { buildTelegramShareUrl, sendTelegramBotMessage } from "@/lib/services/telegram-service";
+import { appConfig } from "@/lib/config";
 import { isLikelyTonAddress } from "@/lib/utils";
 
 const PENDING_CONTEXT_TTL_MS = 30 * 60 * 1000;
@@ -228,7 +229,9 @@ export async function POST(request: Request) {
 
   if (prompt === "/start") {
     if (chatId) {
-      await sendTelegramMessage(chatId, buildWelcomeMessage());
+      await sendTelegramMessage(chatId, buildWelcomeMessage(), [
+        [{ text: "Open JohnTon Marketplace", web_app: { url: appConfig.appUrl } }],
+      ]);
     }
     return NextResponse.json({ ok: true, started: true, updateType });
   }

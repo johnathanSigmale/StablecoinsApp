@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Script from "next/script";
 import "./globals.css";
 
+import { TelegramWebAppInit } from "@/components/telegram-webapp-init";
 import { TonProvider } from "@/components/providers/ton-provider";
 import { appConfig } from "@/lib/config";
 
@@ -14,6 +16,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
+        <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
+        <TelegramWebAppInit />
         <TonProvider>
           <header className="siteHeader">
             <div className="siteHeaderInner">

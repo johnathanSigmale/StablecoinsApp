@@ -6,7 +6,12 @@ type TelegramUrlButton = {
   url: string;
 };
 
-type TelegramInlineButton = TelegramUrlButton;
+type TelegramWebAppButton = {
+  text: string;
+  web_app: { url: string };
+};
+
+type TelegramInlineButton = TelegramUrlButton | TelegramWebAppButton;
 
 function normalizeTelegramHandle(handle?: string | null) {
   const normalized = handle?.trim();
