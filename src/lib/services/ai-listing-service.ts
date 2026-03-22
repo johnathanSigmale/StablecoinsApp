@@ -322,8 +322,9 @@ function normalizeGeminiDraft(input: ListingDraftInput, parsed: PartialListingDr
     typeof parsed.summary === "string" && parsed.summary.trim()
       ? parsed.summary.trim()
       : rewriteFallbackSummary(input.sellerPrompt, title, input.city, condition);
+  const heuristicPriceTon = inferPrice(`${title} ${input.sellerPrompt}`, explicitPriceTon);
   const geminiPrice = typeof parsed.priceTon === "number" && Number.isFinite(parsed.priceTon) ? parsed.priceTon : undefined;
-  const priceTon = explicitPriceTon || geminiPrice || inferPrice(input.sellerPrompt, explicitPriceTon);
+  const priceTon = explicitPriceTon || (geminiPrice && geminiPrice >= Math.max(1, heuristicPriceTon * 0.5) ? geminiPrice : heuristicPriceTon);
   const tags = Array.isArray(parsed.aiInsights?.tags)
     ? parsed.aiInsights.tags.filter((tag): tag is string => typeof tag === "string" && Boolean(tag.trim())).slice(0, 6)
     : [];
