@@ -25,19 +25,12 @@ type HeroImageResult = {
   statusMessage: string;
 };
 
-type GeminiCandidate = {
-  content?: {
-    parts?: Array<{ text?: string }>;
-  };
-  groundingMetadata?: {
-    webSearchQueries?: string[];
-    searchEntryPoint?: unknown;
-    groundingChunks?: unknown[];
-  };
-};
-
 type GeminiPayload = {
-  candidates?: GeminiCandidate[];
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{ text?: string }>;
+    };
+  }>;
 };
 
 const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash";
@@ -298,7 +291,7 @@ async function fetchGeminiWithRetry(url: string, body: unknown, apiKey: string) 
 }
 
 function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number): GeminiPart[] {
-  const parts: GeminiPart[] = [
+  return [
     {
       text: [
         "You help sellers create Telegram-native second-hand electronics listings for a TON commerce assistant.",
@@ -309,7 +302,7 @@ function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number): 
         "Use the seller photo when present to identify the product and improve the listing.",
         explicitPriceTon
           ? `The seller explicitly set the price to ${explicitPriceTon} TON. Preserve that exact TON price.`
-          : "The seller did not provide a TON price. Estimate a fair current second-hand TON price for the identified product. If the exact model is uncertain, estimate from the closest matching product family and explain that logic in pricingRationale. Do not use a generic category default.",
+          : "The seller did not provide a TON price. Estimate a fair current second-hand TON price for the identified product using your model knowledge. If the exact model is uncertain, estimate from the closest matching product family and explain that logic in pricingRationale.",
         "Keep the tone concise, credible, and marketplace-ready.",
         "Prefer a title that starts with the identified brand and model whenever possible.",
         `Seller handle: ${input.sellerHandle}`,
@@ -318,8 +311,6 @@ function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number): 
       ].join("\n"),
     },
   ];
-
-  return parts;
 }
 
 function normalizeGeminiDraft(input: ListingDraftInput, parsed: PartialListingDraft): ListingDraft {
@@ -334,7 +325,7 @@ function normalizeGeminiDraft(input: ListingDraftInput, parsed: PartialListingDr
   const geminiPrice = typeof parsed.priceTon === "number" && Number.isFinite(parsed.priceTon) ? parsed.priceTon : undefined;
   const priceTon = explicitPriceTon || geminiPrice || inferPrice(input.sellerPrompt, explicitPriceTon);
   const tags = Array.isArray(parsed.aiInsights?.tags)
-    ? parsed.aiInsights?.tags.filter((tag): tag is string => typeof tag === "string" && Boolean(tag.trim())).slice(0, 6)
+    ? parsed.aiInsights.tags.filter((tag): tag is string => typeof tag === "string" && Boolean(tag.trim())).slice(0, 6)
     : [];
 
   const pricingRationale =
@@ -361,12 +352,8 @@ function normalizeGeminiDraft(input: ListingDraftInput, parsed: PartialListingDr
   };
 }
 
-async function requestGeminiDraft(
-  apiKey: string,
-  input: ListingDraftInput,
-  options: { explicitPriceTon?: number; useSearch: boolean },
-) {
-  const parts = buildGeminiParts(input, options.explicitPriceTon);
+async function requestGeminiDraft(apiKey: string, input: ListingDraftInput, explicitPriceTon?: number) {
+  const parts = buildGeminiParts(input, explicitPriceTon);
   const imagePart = input.imageUrl ? await fetchImageAsInlinePart(input.imageUrl) : null;
   if (imagePart) {
     parts.push(imagePart);
@@ -376,7 +363,6 @@ async function requestGeminiDraft(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`,
     {
       contents: [{ parts }],
-      tools: options.useSearch ? [{ google_search: {} }] : undefined,
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: buildDraftSchema(),
@@ -397,25 +383,9 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
   }
 
   const explicitPriceTon = input.desiredPriceTon ?? extractExplicitTonPrice(input.sellerPrompt);
-  const shouldUseSearch = !explicitPriceTon;
 
   try {
-    let response = await requestGeminiDraft(apiKey, input, {
-      explicitPriceTon,
-      useSearch: shouldUseSearch,
-    });
-
-    let usedSearch = shouldUseSearch;
-    let retriedWithoutSearch = false;
-
-    if (response?.status === 429 && shouldUseSearch) {
-      response = await requestGeminiDraft(apiKey, input, {
-        explicitPriceTon,
-        useSearch: false,
-      });
-      usedSearch = false;
-      retriedWithoutSearch = true;
-    }
+    const response = await requestGeminiDraft(apiKey, input, explicitPriceTon);
 
     if (!response || !response.ok) {
       const status = response?.status ?? 0;
@@ -461,11 +431,7 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
       source: "gemini",
       statusMessage: explicitPriceTon
         ? `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} while preserving the seller price.`
-        : retriedWithoutSearch
-          ? `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} after retrying without search grounding.`
-          : usedSearch
-            ? `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using search-grounded price estimation.`
-            : `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using model-based price estimation.`,
+        : `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using model-based price estimation.`,
     };
   } catch (error) {
     console.error("Gemini text generation threw an error:", error);
