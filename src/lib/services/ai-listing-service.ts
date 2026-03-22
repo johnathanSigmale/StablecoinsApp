@@ -381,7 +381,7 @@ function normalizeGeminiDraft(input: ListingDraftInput, parsed: PartialListingDr
 
 async function requestGeminiDraft(apiKey: string, input: ListingDraftInput, explicitPriceTon?: number) {
   const webContext = await fetchWebContext(apiKey, input.sellerPrompt);
-  const parts = buildGeminiParts(input, explicitPriceTon, webContext ?? undefined);
+  const parts = buildGeminiParts(input, explicitPriceTon, webContext ?? undefined); // null → undefined
   const imagePart = input.imageUrl ? await fetchImageAsInlinePart(input.imageUrl) : null;
   if (imagePart) {
     parts.push(imagePart);
@@ -398,25 +398,6 @@ async function requestGeminiDraft(apiKey: string, input: ListingDraftInput, expl
     },
     apiKey,
   );
-}
-
-function mergeWithFallbackDraft(input: ListingDraftInput, parsed: Partial<ListingDraft>): ListingDraft {
-  const fallback = fallbackDraft(input).draft;
-  const explicitPriceTon = input.desiredPriceTon ?? extractExplicitTonPrice(input.sellerPrompt);
-  const title = parsed.title?.trim() || fallback.title;
-
-  return {
-    title,
-    summary: parsed.summary?.trim() || fallback.summary,
-    category: parsed.category?.trim() || fallback.category,
-    condition: parsed.condition?.trim() || fallback.condition,
-    priceTon: explicitPriceTon || Number(parsed.priceTon) || fallback.priceTon,
-    aiInsights: {
-      suggestedTitle: parsed.aiInsights?.suggestedTitle?.trim() || title,
-      pricingRationale: parsed.aiInsights?.pricingRationale?.trim() || fallback.aiInsights.pricingRationale,
-      tags: parsed.aiInsights?.tags?.slice(0, 6) || fallback.aiInsights.tags,
-    },
-  };
 }
 
 export async function generateListingDraftResult(input: ListingDraftInput): Promise<DraftResult> {
@@ -459,14 +440,13 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
       };
     }
 
-    const rawJson = JSON.parse(extractJsonCandidate(content)) as Partial<ListingDraft> & { clarificationNeeded?: string };
+    const rawJson = JSON.parse(extractJsonCandidate(content)) as PartialListingDraft & { clarificationNeeded?: string };
     const clarificationNeeded =
       typeof rawJson.clarificationNeeded === "string" && rawJson.clarificationNeeded.trim()
         ? rawJson.clarificationNeeded.trim()
         : undefined;
 
-    const parsed = mergeWithFallbackDraft(input, rawJson);
-    const draft = normalizeGeminiDraft(input, parsed);
+    const draft = normalizeGeminiDraft(input, rawJson);
 
     return {
       draft,
@@ -486,7 +466,7 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
   }
 }
 
-export async function generateListingHeroImageResult(input: ListingDraftInput, _draft: ListingDraft): Promise<HeroImageResult> {
+export async function generateListingHeroImageResult(input: ListingDraftInput): Promise<HeroImageResult> {
   if (input.imageUrl) {
     return {
       imageUrl: input.imageUrl,

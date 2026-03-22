@@ -42,7 +42,7 @@ export async function createListingFromDraftResult(input: ListingDraftInput, dra
   }
   const draft = draftResult.draft;
   const createdAt = nowIso();
-  const imageResult = await generateListingHeroImageResult(input, draft);
+  const imageResult = await generateListingHeroImageResult(input);
 
   const listing: Listing = {
     id: createListingId(draft.title),
