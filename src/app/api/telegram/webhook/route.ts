@@ -367,16 +367,21 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Telegram listing creation failed:", error);
+    const message = error instanceof Error ? error.message : "Listing creation failed.";
 
     if (chatId) {
       await sendTelegramMessage(
         chatId,
-        "I could not create the listing. Check NEXT_PUBLIC_APP_URL, GEMINI_API_KEY, storage configuration, seller wallet setup, and deployment logs, then try again.",
+        [
+          "I could not create the listing.",
+          "",
+          `Reason: ${message}`,
+          "",
+          "Gemini text generation is required for listing creation. Check GEMINI_API_KEY, quota/rate limits, and deployment logs, then try again.",
+        ].join("\n"),
       );
     }
 
-    return NextResponse.json({ ok: false, error: "Listing creation failed.", updateType }, { status: 500 });
+    return NextResponse.json({ ok: false, error: message, updateType }, { status: 500 });
   }
 }
-
-

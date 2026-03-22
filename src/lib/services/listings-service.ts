@@ -37,6 +37,9 @@ export async function findListing(id: string) {
 
 export async function createListing(input: ListingDraftInput) {
   const draftResult = await generateListingDraftResult(input);
+  if (draftResult.source !== "gemini") {
+    throw new Error(draftResult.statusMessage || "Gemini listing generation is required.");
+  }
   const draft = draftResult.draft;
   const createdAt = nowIso();
   const imageResult = await generateListingHeroImageResult(input, draft);
