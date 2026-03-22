@@ -9,18 +9,6 @@ type GeminiPart = {
   };
 };
 
-type GeminiResponsePart = {
-  text?: string;
-  inline_data?: {
-    mime_type?: string;
-    data?: string;
-  };
-  inlineData?: {
-    mimeType?: string;
-    data?: string;
-  };
-};
-
 type DraftResult = {
   draft: ListingDraft;
   source: "gemini" | "fallback";
@@ -34,7 +22,6 @@ type HeroImageResult = {
 };
 
 const GEMINI_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash-lite";
-const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
 
 function inlinePartFromDataUrl(dataUrl: string): GeminiPart | null {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
@@ -87,7 +74,7 @@ function inferCondition(prompt: string) {
     return "Very Good";
   }
 
-  if (normalized.match(/used|good|works well|bon etat|bon état/)) {
+  if (normalized.match(/used|good|works well|bon etat|bon Ã©tat/)) {
     return "Good";
   }
 
@@ -115,69 +102,23 @@ function inferPrice(prompt: string, desiredPriceTon?: number) {
 
   const normalized = prompt.toLowerCase();
 
-  if (normalized.match(/iphone\s*15\s*pro\s*max/)) {
-    return 340;
-  }
-
-  if (normalized.match(/iphone\s*15\s*pro/)) {
-    return 300;
-  }
-
-  if (normalized.match(/iphone\s*14\s*pro\s*max/)) {
-    return 290;
-  }
-
-  if (normalized.match(/iphone\s*14\s*pro/)) {
-    return 250;
-  }
-
-  if (normalized.match(/iphone\s*14/)) {
-    return 220;
-  }
-
-  if (normalized.match(/galaxy\s*a80/)) {
-    return 70;
-  }
-
-  if (normalized.match(/galaxy\s*s2[34]/)) {
-    return 240;
-  }
-
-  if (normalized.match(/ps5|playstation\s*5/)) {
-    return 180;
-  }
-
-  if (normalized.match(/quest\s*3/)) {
-    return 240;
-  }
-
-  if (normalized.match(/quest\s*2/)) {
-    return 140;
-  }
-
-  if (normalized.match(/ipad\s*pro/)) {
-    return 280;
-  }
-
-  if (normalized.match(/macbook\s*pro/)) {
-    return 420;
-  }
-
-  if (normalized.match(/laptop|pc|legion|macbook/)) {
-    return 390;
-  }
-
-  if (normalized.match(/ipad|tablet/)) {
-    return 220;
-  }
-
-  if (normalized.match(/quest|vr|gaming/)) {
-    return 150;
-  }
-
-  if (normalized.match(/phone|iphone|pixel|galaxy/)) {
-    return 160;
-  }
+  if (normalized.match(/iphone\s*15\s*pro\s*max/)) return 340;
+  if (normalized.match(/iphone\s*15\s*pro/)) return 300;
+  if (normalized.match(/iphone\s*14\s*pro\s*max/)) return 290;
+  if (normalized.match(/iphone\s*14\s*pro/)) return 250;
+  if (normalized.match(/iphone\s*14/)) return 220;
+  if (normalized.match(/iphone\s*13/)) return 180;
+  if (normalized.match(/galaxy\s*a80/)) return 70;
+  if (normalized.match(/galaxy\s*s2[34]/)) return 240;
+  if (normalized.match(/ps5|playstation\s*5/)) return 180;
+  if (normalized.match(/quest\s*3/)) return 240;
+  if (normalized.match(/quest\s*2/)) return 140;
+  if (normalized.match(/ipad\s*pro/)) return 280;
+  if (normalized.match(/macbook\s*pro/)) return 420;
+  if (normalized.match(/laptop|pc|legion|macbook/)) return 390;
+  if (normalized.match(/ipad|tablet/)) return 220;
+  if (normalized.match(/quest|vr|gaming/)) return 150;
+  if (normalized.match(/phone|iphone|pixel|galaxy/)) return 160;
 
   return 120;
 }
@@ -210,7 +151,7 @@ function rewriteFallbackSummary(prompt: string, title: string, city: string, con
     `${title} offered in ${condition.toLowerCase()} condition for an in-person exchange.`,
     `Pickup or meetup is available in ${city}.`,
     `Seller notes: ${normalizedPrompt}.`,
-    "Buyer can lock TON first, inspect the item in person, and release funds only after validation.",
+    "Buyer can reserve the meetup first, inspect the item in person, and release payment only after validation.",
   ].join(" ");
 }
 
@@ -347,7 +288,6 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
   }
 
   const explicitPriceTon = input.desiredPriceTon ?? extractExplicitTonPrice(input.sellerPrompt);
-  const shouldEstimatePrice = !explicitPriceTon;
   const parts: GeminiPart[] = [
     {
       text: [
@@ -382,7 +322,6 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
           responseMimeType: "application/json",
           responseSchema: buildDraftSchema(),
         },
-        tools: shouldEstimatePrice ? [{ google_search: {} }] : undefined,
       },
       apiKey,
     );
@@ -406,10 +345,6 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
         content?: {
           parts?: Array<{ text?: string }>;
         };
-        groundingMetadata?: {
-          webSearchQueries?: string[];
-          groundingChunks?: unknown[];
-        };
       }>;
     };
 
@@ -431,11 +366,6 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
       };
     }
 
-    const usedSearchGrounding = Boolean(
-      payload.candidates?.[0]?.groundingMetadata?.webSearchQueries?.length ||
-        payload.candidates?.[0]?.groundingMetadata?.groundingChunks?.length,
-    );
-
     parsed.priceTon = explicitPriceTon || Number(parsed.priceTon) || inferPrice(input.sellerPrompt, explicitPriceTon);
     parsed.aiInsights.tags = parsed.aiInsights.tags?.slice(0, 6) || [];
 
@@ -448,9 +378,7 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
       source: "gemini",
       statusMessage: explicitPriceTon
         ? `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} while preserving the seller price.`
-        : usedSearchGrounding
-          ? `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using Google Search grounding for price estimation.`
-          : `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using model-based price estimation.`,
+        : `Gemini text generation succeeded with ${GEMINI_TEXT_MODEL} using model-based price estimation.`,
     };
   } catch (error) {
     console.error("Gemini text generation threw an error:", error);
@@ -462,112 +390,19 @@ export async function generateListingDraftResult(input: ListingDraftInput): Prom
   }
 }
 
-function extractInlineImagePart(parts: GeminiResponsePart[]) {
-  for (const part of parts) {
-    const snakeInline = part.inline_data;
-    const camelInline = part.inlineData;
-    const mimeType = snakeInline?.mime_type || camelInline?.mimeType;
-    const data = snakeInline?.data || camelInline?.data;
-
-    if (mimeType?.startsWith("image/") && data) {
-      return `data:${mimeType};base64,${data}`;
-    }
-  }
-
-  return null;
-}
-
-export async function generateListingHeroImageResult(input: ListingDraftInput, draft: ListingDraft): Promise<HeroImageResult> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return {
-      imageUrl: input.imageUrl || null,
-      source: input.imageUrl ? "seller-photo" : "fallback",
-      statusMessage: input.imageUrl
-        ? "Using the seller photo because Gemini image generation is unavailable."
-        : "No seller photo and no Gemini image generation available.",
-    };
-  }
-
-  const parts: GeminiPart[] = [
-    {
-      text: [
-        `Create a clean ecommerce hero image for this product: ${draft.title}.`,
-        `Category: ${draft.category}.`,
-        `Condition: ${draft.condition}.`,
-        "Style: photorealistic product shot, centered subject, premium studio lighting, realistic materials, no text, no watermark, no collage.",
-        input.imageUrl
-          ? "Use the reference image to preserve the exact identity, color, and shape of the seller's real product."
-          : "Generate the product image from the description only.",
-        `Seller description: ${input.sellerPrompt}`,
-      ].join("\n"),
-    },
-  ];
-
-  if (input.imageUrl) {
-    const imagePart = await fetchImageAsInlinePart(input.imageUrl);
-    if (imagePart) {
-      parts.push(imagePart);
-    }
-  }
-
-  try {
-    const response = await fetchGeminiWithRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent`,
-      {
-        contents: [{ parts }],
-      },
-      apiKey,
-    );
-
-    if (!response || !response.ok) {
-      const status = response?.status ?? 0;
-      const body = response ? await response.text() : "No response";
-      console.error("Gemini image generation failed:", body);
-
-      if (status === 429 && input.imageUrl) {
-        return {
-          imageUrl: input.imageUrl,
-          source: "seller-photo",
-          statusMessage: "Gemini image generation hit rate limits (HTTP 429), so the seller photo is used instead.",
-        };
-      }
-    } else {
-      const payload = (await response.json()) as {
-        candidates?: Array<{
-          content?: {
-            parts?: GeminiResponsePart[];
-          };
-        }>;
-      };
-
-      const imageDataUrl = extractInlineImagePart(payload.candidates?.[0]?.content?.parts || []);
-      if (imageDataUrl) {
-        return {
-          imageUrl: imageDataUrl,
-          source: "gemini-image",
-          statusMessage: `Gemini generated a hero image successfully with ${GEMINI_IMAGE_MODEL}.`,
-        };
-      }
-
-      console.error("Gemini image generation returned no inline image part.");
-    }
-  } catch (error) {
-    console.error("Gemini image generation threw an error:", error);
-  }
-
+export async function generateListingHeroImageResult(input: ListingDraftInput, _draft: ListingDraft): Promise<HeroImageResult> {
   if (input.imageUrl) {
     return {
       imageUrl: input.imageUrl,
       source: "seller-photo",
-      statusMessage: "Gemini image generation failed, so the seller photo is used instead.",
+      statusMessage: "Using the seller photo as the listing image.",
     };
   }
 
   return {
     imageUrl: null,
     source: "fallback",
-    statusMessage: "Gemini image generation failed and no seller photo was available.",
+    statusMessage: "No seller photo was available.",
   };
 }
 
