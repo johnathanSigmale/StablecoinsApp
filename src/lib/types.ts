@@ -27,7 +27,6 @@ export type ListingEscrow = {
   buyerContact?: string;
   buyerWalletAddress?: string;
   reservationMode?: ReservationMode;
-  releaseCode?: string;
   transactionRef?: string;
   balanceVerifiedAt?: string;
   fundsLockedAt?: string;
@@ -71,7 +70,6 @@ export type PurchaseIntent = {
   buyerName?: string;
   buyerContact: string;
   walletAddress?: string;
-  transactionRef?: string;
   reservationMode: ReservationMode;
 };
 

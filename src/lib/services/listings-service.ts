@@ -23,10 +23,6 @@ function normalizeEscrowStatus(status: string): EscrowStatus {
   return status as EscrowStatus;
 }
 
-function createReleaseCode() {
-  return Math.random().toString(36).slice(2, 8).toUpperCase();
-}
-
 export async function listListings() {
   const listings = await readListings();
   return listings.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -109,7 +105,6 @@ export async function reserveListing(id: string, purchaseIntent: PurchaseIntent)
     buyerContact: purchaseIntent.buyerContact.trim(),
     buyerWalletAddress: purchaseIntent.walletAddress?.trim(),
     reservationMode: purchaseIntent.reservationMode,
-    releaseCode: createReleaseCode(),
     transactionRef: purchaseIntent.reservationMode === "balance_check" ? "balance-check-verified" : "demo-reservation",
     balanceVerifiedAt: purchaseIntent.reservationMode === "balance_check" ? nextTimestamp : undefined,
     fundsLockedAt: nextTimestamp,
@@ -153,7 +148,6 @@ export async function acceptMeetup(id: string) {
 export async function releaseListingEscrow(
   id: string,
   options?: {
-    providedCode?: string;
     transactionRef?: string;
   },
 ) {
@@ -167,17 +161,6 @@ export async function releaseListingEscrow(
   const normalizedStatus = normalizeEscrowStatus(listing.escrow.status);
   if (normalizedStatus !== "seller_accepted") {
     throw new Error("The seller must accept the meetup before the buyer can release payment.");
-  }
-
-  const expectedCode = listing.escrow.releaseCode?.trim().toUpperCase();
-  const providedCode = options?.providedCode?.trim().toUpperCase();
-
-  if (expectedCode && !providedCode) {
-    throw new Error("The seller release code is required.");
-  }
-
-  if (expectedCode && providedCode !== expectedCode) {
-    throw new Error("Release code does not match.");
   }
 
   if (listing.escrow.reservationMode === "balance_check" && !options?.transactionRef?.trim()) {
