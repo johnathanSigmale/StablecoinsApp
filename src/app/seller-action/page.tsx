@@ -41,35 +41,52 @@ export default async function SellerActionPage({ searchParams }: SellerActionPag
     );
   }
 
-  const updatedListing =
-    action === "accept"
-      ? await acceptMeetup(listingId)
-      : await cancelListingEscrow(listingId, "Seller cancelled the reservation from Telegram.");
+  try {
+    const updatedListing =
+      action === "accept"
+        ? await acceptMeetup(listingId)
+        : await cancelListingEscrow(listingId, "Seller cancelled the reservation from Telegram.");
 
-  if (!updatedListing) {
-    notFound();
+    if (!updatedListing) {
+      notFound();
+    }
+
+    return (
+      <main className="pageShell">
+        <section className="glassPanel">
+          <span className="eyebrow">Seller Action</span>
+          <h1>{action === "accept" ? "Meetup accepted" : "Reservation cancelled"}</h1>
+          <p>
+            {action === "accept"
+              ? "The buyer can now inspect the item in person. Keep the release code private until the meetup is complete."
+              : "The listing is active again and can be reserved by another buyer."}
+          </p>
+          {action === "accept" && updatedListing.escrow.releaseCode ? (
+            <div className="codePanel">
+              <span>Private seller release code</span>
+              <strong>{updatedListing.escrow.releaseCode}</strong>
+            </div>
+          ) : null}
+          <Link className="primaryButton" href={`/listings/${updatedListing.id}`}>
+            Open listing
+          </Link>
+        </section>
+      </main>
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Seller action failed.";
+
+    return (
+      <main className="pageShell">
+        <section className="glassPanel">
+          <span className="eyebrow">Seller Action</span>
+          <h1>Action already processed</h1>
+          <p>{message}</p>
+          <Link className="primaryButton" href={`/listings/${listing.id}`}>
+            Open listing
+          </Link>
+        </section>
+      </main>
+    );
   }
-
-  return (
-    <main className="pageShell">
-      <section className="glassPanel">
-        <span className="eyebrow">Seller Action</span>
-        <h1>{action === "accept" ? "Meetup accepted" : "Reservation cancelled"}</h1>
-        <p>
-          {action === "accept"
-            ? "The buyer can now inspect the item in person. Keep the release code private until the meetup is complete."
-            : "The listing is active again and can be reserved by another buyer."}
-        </p>
-        {action === "accept" && updatedListing.escrow.releaseCode ? (
-          <div className="codePanel">
-            <span>Private seller release code</span>
-            <strong>{updatedListing.escrow.releaseCode}</strong>
-          </div>
-        ) : null}
-        <Link className="primaryButton" href={`/listings/${updatedListing.id}`}>
-          Open listing
-        </Link>
-      </section>
-    </main>
-  );
 }
