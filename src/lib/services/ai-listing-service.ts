@@ -375,7 +375,7 @@ function buildGeminiParts(input: ListingDraftInput, explicitPriceTon?: number, p
           : priceContext
             ? [
                 "Estimate a fair second-hand TON price using the real market price data below.",
-                "Convert the USD range to TON (1 TON ≈ 5 USD). Adjust within the range based on the product's condition.",
+                "Convert the USD range to TON (1 TON ≈ 1.25 USD). Adjust within the range based on the product's condition.",
                 "Condition discounts from the used market midpoint: Excellent 0%, Very Good −10%, Good −20%, Fair −35%.",
                 `Market price data:\n${priceContext}`,
               ].join("\n")
